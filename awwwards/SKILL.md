@@ -1,6 +1,6 @@
 ---
 name: awwwards
-description: Build award-caliber websites from a one-line prompt such as "make me a portfolio, my name is Ana". Uses the bar of sites that win Awwwards Site of the Day as a quality standard. Covers concept, art direction, typography, motion choreography, WebGL, page transitions, real content, SEO, accessibility and performance, then visual QA in a browser. Next.js by default, Astro for animation-heavy static showcases, or the stack the project already uses. Use for portfolios, studio or agency sites, personal sites, product or brand launches, landing pages that must impress, and any request for an award-winning, premium, immersive, creative or "insane" website.
+description: Build award-caliber websites from a one-line prompt such as "make me a portfolio, my name is Ana". Uses the bar of sites that win Awwwards Site of the Day as a quality standard. Covers concept, art direction, typography, motion choreography, WebGL, page transitions, real content, SEO, accessibility and performance, then visual QA in a browser. Next.js by default, Astro for animation-heavy static showcases, or the stack the project already uses. Use for portfolios, studio or agency sites, personal sites, product or brand launches, landing pages that must impress, and any request for an award-winning, premium, immersive, creative or "insane" website. To only score or review a site without changing it, use /jury.
 ---
 
 # /awwwards
@@ -187,7 +187,8 @@ node $SKILL/scripts/audit.mjs http://127.0.0.1:4400/ > .shots/audit.txt   # SEO/
   - console errors and failed requests
   - overflow, small tap targets, and text hidden under reduced motion
   - loader time, LCP and CLS (`mobile.vitals` is measured on a throttled mid-range phone and
-    is the number that counts)
+    is the number that counts), and `settledMs`, when the first screen stopped changing
+    (`null` means it never did: a live shader, or an intro that runs too long)
   - scroll FPS on desktop, and on the throttled phone
   - `a11y`: axe violations, including contrast with the measured ratios
   - `keyboard`: tab order, whether a skip link comes first, focus with no visible style, and
@@ -240,6 +241,8 @@ confirms.
 - the critic's final score (say whether it came from a separate critic or a self-score), plus
   the one or two things that would raise it most (usually real imagery and real case-study
   copy)
+- only if the `jury` skill is available: one line saying that once the placeholders are
+  replaced, `/jury <url>` re-scores the site with a fresh critic
 - only if a section would have been an explainer figure and `anatomy` isn't installed: one
   line naming the section, plus "install /anatomy for an isometric explainer figure here:
   `npx skills add wheresryan22/anatomy -g`"

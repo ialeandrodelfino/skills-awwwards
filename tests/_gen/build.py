@@ -1,6 +1,8 @@
-# Generate the code-carrying references from the tested fixture apps.
+# Generate the code-carrying references from the tested fixture apps, and copy the files /awwwards
+# bundles from the skills that own them.
 #   python tests/_gen/build.py           rewrite awwwards/references/{engine,astro,nextjs,webgl}.md
-#   python tests/_gen/build.py --check   fail if they differ from what the fixtures would generate
+#                                        and the copies listed in COPIES
+#   python tests/_gen/build.py --check   fail if any of them differ from what would be generated
 import json, os, re, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -9,6 +11,15 @@ G = os.path.join(T, '_gen')
 R = os.path.join(ROOT, 'awwwards', 'references')
 SHARED = ['env.ts', 'scroll.ts', 'reveal.ts', 'loader.ts', 'interactions.ts', 'transition.ts', 'index.ts',
           'gl/index.ts', 'gl/shaders.ts']
+# Files a smaller skill owns and /awwwards carries a copy of, so /awwwards still works when it is
+# installed alone. Edit the source; the copy is rewritten.
+COPIES = [
+    ('jury/scripts/shoot.mjs', 'awwwards/scripts/shoot.mjs'),
+    ('jury/scripts/audit.mjs', 'awwwards/scripts/audit.mjs'),
+    ('jury/scripts/browser.mjs', 'awwwards/scripts/browser.mjs'),
+    ('jury/scripts/serve.mjs', 'awwwards/scripts/serve.mjs'),
+    ('jury/references/quality-bar.md', 'awwwards/references/quality-bar.md'),
+]
 
 def read(*p):
     return open(os.path.join(*p), encoding='utf8').read().replace('\r\n', '\n')
@@ -30,6 +41,17 @@ def major(app, pkg):
 
 def header(src):
     return f'<!-- Generated from {src} by tests/_gen/build.py; edit there, not here. -->\n'
+
+def copied(src):
+    text = read(ROOT, src)
+    if not src.endswith('.mjs'):
+        return header(src) + text
+    # The shebang has to stay on the first line, so the note goes under it.
+    note = f'// Generated from {src} by tests/_gen/build.py; edit there, not here.\n'
+    if text.startswith('#!'):
+        first, rest = text.split('\n', 1)
+        return f'{first}\n{note}{rest}'
+    return note + text
 
 def engine():
     E = os.path.join(T, 'nexttest', 'src', 'engine')
@@ -73,20 +95,22 @@ def main():
     engine_css = css[css.index('/* ENGINE + FOUNDATION'):css.index('/* Test-only')].rstrip()
     if engine_css not in read(T, 'astrotest', 'src', 'styles', 'base.css'):
         bad.append('engine CSS in nexttest globals.css differs from astrotest styles/base.css')
-    out = {'engine': engine(), **{n: template(n) for n in ['astro', 'nextjs', 'webgl']}}
-    for name, text in out.items():
-        dst = os.path.join(R, name + '.md')
+    refs = {'engine': engine(), **{n: template(n) for n in ['astro', 'nextjs', 'webgl']}}
+    out = {os.path.join(R, n + '.md'): t for n, t in refs.items()}
+    out.update({os.path.join(ROOT, dst): copied(src) for src, dst in COPIES})
+    for dst, text in out.items():
+        rel = os.path.relpath(dst, ROOT).replace(os.sep, '/')
         if check:
-            if read(dst) != text:
-                bad.append(f'references/{name}.md is out of date (run python tests/_gen/build.py)')
+            if not os.path.exists(dst) or read(dst) != text:
+                bad.append(f'{rel} is out of date (run python tests/_gen/build.py)')
         else:
             open(dst, 'w', encoding='utf8', newline='\n').write(text)
-            print(f'wrote references/{name}.md ({len(text.splitlines())} lines)')
+            print(f'wrote {rel} ({len(text.splitlines())} lines)')
     for b in bad:
         print('FAIL', b)
     if bad:
         sys.exit(1)
     if check:
-        print('ok: references match the fixtures')
+        print('ok: references match the fixtures, and every copy matches its source')
 
 main()

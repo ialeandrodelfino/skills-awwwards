@@ -1,3 +1,4 @@
+// Generated from jury/scripts/browser.mjs by tests/_gen/build.py; edit there, not here.
 // Resolve a Chromium for Playwright without forcing a download: bundled → any cached build →
 // system Chrome/Edge. Requires `playwright` (or `playwright-core`) resolvable from the project.
 import fs from 'node:fs';

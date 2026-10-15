@@ -1,3 +1,4 @@
-# Generated references are written with LF; keep them LF on every OS.
+# Generated references and copies are written with LF; keep them LF on every OS.
 awwwards/references/*.md text eol=lf
+awwwards/scripts/*.mjs text eol=lf
 tests/_gen/* text eol=lf

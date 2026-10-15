@@ -1,8 +1,10 @@
+<!-- Generated from jury/references/quality-bar.md by tests/_gen/build.py; edit there, not here. -->
 # The quality bar: how award sites are scored, the rubric, and the critic brief
 
-This skill uses the Awwwards scoring system as its bar. It is public, detailed, and backed by
-years of real scores. The goal is a site that would hold up in front of that jury. Submitting
-is optional and up to the owner.
+The bar is the Awwwards scoring system. It is public, detailed, and backed by years of real
+scores. The goal is a site that would hold up in front of that jury; submitting is optional and
+up to the owner. These skills are not affiliated with Awwwards, and every score they give is an
+estimate.
 
 ## The system (awwwards.com/about-evaluation, verified Oct 2026)
 
@@ -71,7 +73,7 @@ evidence, no points.
 **Usability (30%)**
 - 6: works, but the loader is long, nav is unclear on some page, mobile is squished, or FPS drops.
 - 7: fast, clear nav, mobile works, reduced motion is acceptable.
-- 8: instant orientation, mobile composed for the hand, transitions never block, accessibility basics complete, 60 fps, every primary hover target answers in the motion verb (`h-*` pairs; `hover.noHoverChange` empty).
+- 8: instant orientation, mobile composed for the hand, transitions never block, accessibility basics complete, 60 fps, every primary hover target answers in the site's own motion, not a color swap alone (`h-*` pairs; `hover.noHoverChange` empty).
 - 9: all of 8, plus delightful feedback everywhere and zero friction on every device.
 
 **Creativity (20%)**
@@ -86,11 +88,21 @@ evidence, no points.
 - 8: copy with voice and real substance; case studies explain the problem, the idea and the outcome.
 
 **Developer (each 1 to 10):** Semantics/SEO, Animations/Transitions, Accessibility, WPO,
-Responsive, Markup/Meta-data. Use the `audit.mjs` and `shoot.mjs` reports as evidence.
+Responsive, Markup/Meta-data. Use the `audit.mjs` and `shoot.mjs` reports as evidence. An 8
+needs everything in its row; each miss costs a point or more.
 
-Weighted overall = 0.4 Design + 0.3 Usability + 0.2 Creativity + 0.1 Content. Target 8.0 or
-higher. Real reviewers score lower than any assessment from inside the build, so an 8 here is
-roughly a competitive Site of the Day.
+| Area | Evidence | An 8 needs |
+|---|---|---|
+| Semantics/SEO | audit: lang, one `<h1>`, heading order, `<main>`, titles, descriptions, canonical, robots, sitemap, 404 status | 0 audit FAILs in the area, a unique title and description per page, a real 404 |
+| Animations/Transitions | `d-90`..`d-92` frames, `h-*` pairs, `hover`, `desktop.idleMotion`, `scrollFps` | a continuous transition between pages, no primary target in `noHoverChange` or a text-color-only `colorOnly`, smooth scroll |
+| Accessibility | `a11y` (axe), `keyboard`, `k-*` and `r-*` frames, `reduced.hiddenText`, `reduced.moving` | 0 serious or critical axe violations, a skip link first, every focus stop visible, `hiddenText` 0, nothing still moving under reduced motion |
+| WPO | `mobile.vitals`, `mobile.loaderMs`, `desktop.settledMs` and `mobile.settledMs`, `mobile.scrollFps`, the audit's heaviest-page line | throttled mobile LCP under 2.5 s, CLS under 0.05, a loader or intro done within 2.6 s, JS under 300 KB gzipped, a page under 3 MB |
+| Responsive | `m-*` frames, `overflowX` and `offenders`, `smallTargets` | no overflow, tap targets of at least 24 px, a phone layout composed rather than squished |
+| Markup/Meta-data | audit: OG and Twitter tags, `og:image` loads, favicon, viewport, alt text, accessible names | 0 audit FAILs in the area, an OG image that loads |
+
+Weighted overall = 0.4 Design + 0.3 Usability + 0.2 Creativity + 0.1 Content. A site being
+built aims for 8.0 or higher. Real reviewers score lower than any assessment made from inside a
+build, so an 8 from the critic is roughly a competitive Site of the Day.
 
 ## Critic brief (for a fresh subagent on every QA pass)
 
@@ -135,9 +147,10 @@ Reply with: the one-sentence idea, a score table with evidence, the weighted ove
 ranked fix list. Do not suggest a new concept; judge the one on screen.
 ```
 
-The builder compares the critic's one-sentence idea with the Concept Card. If they don't
-match, the site isn't saying what it means to say: fix the site, not the critic.
+Compare the critic's one-sentence idea with what the site was meant to say (a concept card, a
+brief, the owner's own words). If they don't match, the site isn't saying it: fix the site, not
+the critic.
 
-**Without subagents**, score it yourself under the same rules. Look at the screenshots before
-rereading `DESIGN.md`, start every category at 6, and give no points without a cited file.
-Say in the final message that the score is a self-score.
+**Without subagents**, score it yourself under the same rules. Look at the evidence before
+reading any code, design notes or description of intent, start every category at 6, and give no
+points without a cited file. Say in the final message that the score is a self-score.

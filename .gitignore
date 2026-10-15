@@ -1,10 +1,11 @@
-# Keep this repository limited to the actual skill.
+# Keep this repository limited to the skills.
 /*
 !/.gitignore
 !/.gitattributes
 !/.github/
 !/.claude-plugin/
 !/awwwards/
+!/jury/
 !/README.md
 !/LICENSE
 

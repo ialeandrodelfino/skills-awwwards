@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Generated from jury/scripts/audit.mjs by tests/_gen/build.py; edit there, not here.
 // Static audit of a production build: semantics/SEO, metadata, accessibility basics, page weight,
 // leftover placeholders and AI-copy tells. Crawls same-origin links from the start page.
 //   node audit.mjs <url | build-dir> [--max 40]

@@ -17,6 +17,17 @@
       "license": "MIT",
       "category": "design",
       "keywords": ["web-design", "frontend", "gsap", "webgl", "awwwards"]
+    },
+    {
+      "name": "jury",
+      "source": "./jury",
+      "description": "Score any website the way an Awwwards jury would: real-browser evidence, a blind critic, and a ranked fix list.",
+      "author": { "name": "juliobsz", "url": "https://github.com/juliobsz" },
+      "homepage": "https://github.com/juliobsz/skills",
+      "repository": "https://github.com/juliobsz/skills",
+      "license": "MIT",
+      "category": "design",
+      "keywords": ["web-design", "frontend", "qa", "accessibility", "performance", "awwwards"]
     }
   ]
 }

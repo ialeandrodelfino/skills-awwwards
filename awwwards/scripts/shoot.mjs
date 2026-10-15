@@ -1,11 +1,13 @@
 #!/usr/bin/env node
+// Generated from jury/scripts/shoot.mjs by tests/_gen/build.py; edit there, not here.
 // Visual QA: screenshots a running site the way a visitor experiences it (any framework).
 //   node shoot.mjs <url> [--out .shots] [--steps 6] [--nav] [--crawl] [--max 8] [--tabs 12] [--hovers 8] [--no-throttle]
-// Per page: desktop frames (loader end + scroll steps), mobile frames on a throttled mid-range
-// phone (4x CPU, slow 4G), reduced-motion frames, keyboard-focus frames, rest/hover pairs per
-// pointer target, optional page-transition frames (--nav clicks the first internal link), plus
+// Per page: desktop frames (the first screen once it is still, then scroll steps), mobile frames
+// on a throttled mid-range phone (4x CPU, slow 4G), reduced-motion frames, keyboard-focus frames,
+// rest/hover pairs per pointer target, page-transition frames (--nav clicks an internal link), plus
 // report.json with console errors, failed requests, LCP/CLS, FPS, layout metrics, axe-core
-// violations, the tab order, how each hover target reacts, and whether anything moves at rest.
+// violations, the tab order, how each hover target reacts, whether anything moves at rest, and
+// when the first screen stopped changing (an intro without a #loader is waited out, up to a cap).
 // The hover pass adds about 3 s per target; --hovers 0 skips the targets (idle check still runs).
 // --crawl shoots one page of every type plus the 404 into <out>/<page>/ and writes summary.json.
 // Read every PNG it writes.
@@ -75,6 +77,53 @@ const vitals = (page) => page.evaluate(() => ({ ...window.__vitals, cls: Math.ro
 
 // A loader is any #loader element; it is done when removed or hidden.
 const loaderGone = () => { const l = document.getElementById('loader'); if (!l || l.hidden) return true; const cs = getComputedStyle(l); return cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0; };
+
+// Fraction of pixels that differ between two PNG buffers, decoded on a blank `scratch` page (no
+// CSP). `r` limits the comparison to a region of the images (x, y, width, height in image pixels).
+const pxDiff = (scratch, a, b, r = null) => scratch.evaluate(async ([a, b, r]) => {
+  const read = async (s) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${s}`;
+    await img.decode();
+    const c = new OffscreenCanvas(img.width, img.height);
+    const x = c.getContext('2d');
+    x.drawImage(img, 0, 0);
+    const { x: rx, y: ry, width: rw, height: rh } = r || { x: 0, y: 0, width: img.width, height: img.height };
+    return x.getImageData(rx, ry, Math.max(1, rw), Math.max(1, rh)).data;
+  };
+  const [A, B] = await Promise.all([read(a), read(b)]);
+  if (A.length !== B.length) return 1;
+  let n = 0;
+  for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 40) n++;
+  return n / (A.length / 4);
+}, [a.toString('base64'), b.toString('base64'), r]);
+
+// Waits at least `min` ms, then until the screen stops changing, for at most `max` ms more. Sites
+// without a #loader (most sites not built on the engine) often run an intro that a fixed wait
+// would shoot mid-animation. Small ambient motion (particles, a slow shader) counts as settled.
+// Returns `settledMs`, the ms from `t0` by which the screen was still (null if it never was), and
+// `changing`, whether it was still changing once `min` had passed.
+async function settle(page, t0, min, max) {
+  await page.waitForTimeout(min);
+  const scratch = await page.context().newPage();
+  try {
+    const end = Date.now() + max;
+    let prev = await page.screenshot();
+    let at = Date.now();
+    let changing = false;
+    while (Date.now() < end) {
+      await page.waitForTimeout(400);
+      const next = await page.screenshot();
+      if (await pxDiff(scratch, prev, next) < 0.01) return { settledMs: at - t0, changing };
+      changing = true;
+      prev = next;
+      at = Date.now();
+    }
+    return { settledMs: null, changing };
+  } finally {
+    await scratch.close();
+  }
+}
 // Wheel-scroll like a person so smooth-scroll libraries see real input.
 const wheelTo = async (page, y) => {
   for (let i = 0; i < 80; i++) {
@@ -200,26 +249,8 @@ async function keyboard(page, shot) {
 // Also records whether anything moves while the pointer is still, at the top and further down.
 const COLOR_PROPS = new Set(['color', 'backgroundColor', 'borderColor', 'textDecorationLine', 'textDecorationColor']);
 async function hover(page, save) {
-  // Fraction of pixels that differ between two PNG buffers, decoded on a blank page (no CSP).
-  // `r` limits the comparison to a region of the images (x, y, width, height in image pixels).
   const scratch = await page.context().newPage();
-  const pxDiff = (a, b, r = null) => scratch.evaluate(async ([a, b, r]) => {
-    const read = async (s) => {
-      const img = new Image();
-      img.src = `data:image/png;base64,${s}`;
-      await img.decode();
-      const c = new OffscreenCanvas(img.width, img.height);
-      const x = c.getContext('2d');
-      x.drawImage(img, 0, 0);
-      const { x: rx, y: ry, width: rw, height: rh } = r || { x: 0, y: 0, width: img.width, height: img.height };
-      return x.getImageData(rx, ry, Math.max(1, rw), Math.max(1, rh)).data;
-    };
-    const [A, B] = await Promise.all([read(a), read(b)]);
-    if (A.length !== B.length) return 1;
-    let n = 0;
-    for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 40) n++;
-    return n / (A.length / 4);
-  }, [a.toString('base64'), b.toString('base64'), r]);
+  const diff = (a, b, r) => pxDiff(scratch, a, b, r);
 
   // Idle: pointer parked mid-left edge (the corners hold UI), cursor follower masked, after
   // intros and the follower have settled. Sampled at the top, then lower down if nothing moved.
@@ -229,7 +260,7 @@ async function hover(page, save) {
     await page.waitForTimeout(1500);
     const a = await page.screenshot({ mask });
     await page.waitForTimeout(1500);
-    return (await pxDiff(a, await page.screenshot({ mask }))) > 0.0005;
+    return (await diff(a, await page.screenshot({ mask }))) > 0.0005;
   };
   let idleAt = (await still()) ? 'top' : null;
   if (!idleAt) {
@@ -333,8 +364,8 @@ async function hover(page, save) {
       width: Math.max(1, Math.floor(Math.min(box.x + box.width, x + clip.width) - x) - ox),
       height: Math.max(1, Math.floor(Math.min(box.y + box.height, y + clip.height) - y) - oy),
     };
-    const noise = await pxDiff(rest1, rest2, own);
-    const pixels = await pxDiff(rest2, hovered, own) > Math.max(0.01, noise * 2);
+    const noise = await diff(rest1, rest2, own);
+    const pixels = await diff(rest2, hovered, own) > Math.max(0.01, noise * 2);
     const changed = [...new Set(Object.keys(restStyle).filter((k) => restStyle[k] !== hoverStyle[k]).map((k) => k.split(':')[1]))];
     const react = changed.length ? (changed.every((p) => COLOR_PROPS.has(p)) ? 'color' : 'moves')
       : pixels ? 'pixels' : noise > 0.05 ? 'masked' : 'none';
@@ -399,7 +430,7 @@ async function shootPage(browser, axeSource, url, out) {
     await shot(page, 'd-00-firstpaint');
     await page.waitForFunction(loaderGone, null, { timeout: 8000 }).catch(() => report.errors.push('[desktop] loader still present after 8s'));
     report.desktop.loaderMs = Date.now() - t0;
-    await page.waitForTimeout(1600);
+    report.desktop.settledMs = (await settle(page, t0, 1600, 8000)).settledMs;
     await shot(page, 'd-01-hero');
     report.desktop.vitals = await vitals(page);
     await page.mouse.move(720, 450);
@@ -441,6 +472,10 @@ async function shootPage(browser, axeSource, url, out) {
     await ctx.close();
   }
 
+  // Fresh desktop loads below wait out the intro the desktop pass measured (time from the loader
+  // ending to a still screen), or the fixed wait when there was none or it never ended.
+  const introWait = (fixed) => Math.max(fixed, (report.desktop.settledMs ?? 0) - (report.desktop.loaderMs ?? 0));
+
   // Keyboard: a fresh load, then Tab from the top of the page.
   {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -448,7 +483,7 @@ async function shootPage(browser, axeSource, url, out) {
     watch(page, 'keyboard');
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction(loaderGone, null, { timeout: 8000 }).catch(() => {});
-    await page.waitForTimeout(1600);
+    await page.waitForTimeout(introWait(1600));
     report.keyboard = await keyboard(page, shot);
     await ctx.close();
   }
@@ -460,7 +495,7 @@ async function shootPage(browser, axeSource, url, out) {
     watch(page, 'hover');
     await page.goto(url, { waitUntil: 'load' });
     await page.waitForFunction(loaderGone, null, { timeout: 8000 }).catch(() => {});
-    await page.waitForTimeout(2200);
+    await page.waitForTimeout(introWait(2200));
     const { idleMotion, idleAt, ...h } = await hover(page, save);
     report.desktop.idleMotion = idleMotion;
     report.desktop.idleAt = idleAt;
@@ -484,10 +519,10 @@ async function shootPage(browser, axeSource, url, out) {
     await page.goto(url, { waitUntil: 'load', timeout: 60000 });
     await page.waitForFunction(loaderGone, null, { timeout: 20000 }).catch(() => report.errors.push('[mobile] loader still present after 20s'));
     const loaderMs = Date.now() - t0;
-    await page.waitForTimeout(1800);
+    const { settledMs } = await settle(page, t0, 1800, 8000);
     await shot(page, 'm-01-hero');
     const v = await vitals(page);
-    report.mobile = { throttled: throttle, loaderMs, vitals: v, ...(await metrics(page)) };
+    report.mobile = { throttled: throttle, loaderMs, settledMs, vitals: v, ...(await metrics(page)) };
     report.mobile.scrollFps = await fps(page, 2500, 6);
     await page.evaluate(() => scrollTo(0, 0));
     const max = report.mobile.height - 844;
@@ -505,8 +540,10 @@ async function shootPage(browser, axeSource, url, out) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
     const page = await ctx.newPage();
     watch(page, 'reduced');
+    const t0 = Date.now();
     await page.goto(url, { waitUntil: 'load' });
-    await page.waitForTimeout(1500);
+    // `moving`: the screen was still changing 1.5 s after load, with reduced motion requested.
+    const { changing: moving } = await settle(page, t0, 1500, 4000);
     await shot(page, 'r-01-hero');
     report.reduced = await page.evaluate(() => ({
       hiddenText: [...document.querySelectorAll('h1,h2,h3,p,a')].filter((e) => {
@@ -514,6 +551,7 @@ async function shootPage(browser, axeSource, url, out) {
         return e.getBoundingClientRect().height > 0 && (cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05);
       }).length,
     }));
+    report.reduced.moving = moving;
     report.a11y = await a11y(page, axeSource).catch((e) => ({ skipped: `axe failed: ${e.message}` }));
     await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight / 2));
     await page.waitForTimeout(600);
@@ -523,6 +561,7 @@ async function shootPage(browser, axeSource, url, out) {
 
   report.notes.push('desktop FPS runs headless on a software GPU: treat it as a floor, not a measurement of real hardware');
   if (throttle) report.notes.push('mobile runs at 4x CPU slowdown on slow 4G: mobile.vitals and mobile.scrollFps are the numbers that count');
+  report.notes.push('settledMs: ms from navigation by which the first screen stopped changing, never before the fixed wait. null: still changing at the cap, either a long intro or continuous motion (a live shader, video); d-01-hero / m-01-hero tell which. reduced.moving: the screen was still changing 1.5 s after load with reduced motion on');
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
   return report;
 }
@@ -535,6 +574,8 @@ const brief = (name, r) => ({
   overflow: !!(r.desktop.overflowX || r.mobile.overflowX),
   smallTargets: r.mobile.smallTargets?.length || 0,
   hiddenTextReduced: r.reduced?.hiddenText ?? null,
+  movingReduced: r.reduced?.moving ?? null,
+  heroSettledMs: r.desktop.settledMs ?? null,
   mobileLcpMs: r.mobile.vitals?.lcpMs ?? null,
   mobileCls: r.mobile.vitals?.cls ?? null,
   desktopFps: r.desktop.scrollFps?.fps ?? null,
