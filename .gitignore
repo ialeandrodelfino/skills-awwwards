@@ -4,6 +4,7 @@
 !/.gitattributes
 !/.github/
 !/.claude-plugin/
+!/.agents/
 !/awwwards/
 !/README.md
 !/LICENSE

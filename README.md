@@ -6,6 +6,7 @@
 
 <p>
   <a href="https://code.claude.com/docs/en/skills"><img src="https://img.shields.io/badge/Claude_Code-skill-1b1b19?style=flat-square&logo=claude&logoColor=white" alt="Claude Code skill"></a>
+  <a href="https://antigravity.google"><img src="https://img.shields.io/badge/Antigravity-CLI%20%7C%20IDE%20%7C%202.0-1b1b19?style=flat-square" alt="Antigravity supported"></a>
   <a href="https://github.com/openai/codex"><img src="https://img.shields.io/badge/Codex-supported-1b1b19?style=flat-square" alt="Codex supported"></a>
   <a href="https://agentskills.io"><img src="https://img.shields.io/badge/Agent_Skills-compatible-1b1b19?style=flat-square" alt="Agent Skills compatible"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-1b1b19?style=flat-square" alt="MIT license"></a>
@@ -79,10 +80,28 @@ plugin or the skills CLI, not both, or the skill shows up twice.
 </details>
 
 <details>
+<summary>Google Antigravity (CLI, IDE & 2.0)</summary>
+
+For Google Antigravity across all surfaces (CLI `agy`, Antigravity IDE, Antigravity 2.0):
+
+- **Workspace**: If working inside this repository, `.agents/skills.json` automatically registers `awwwards`. In your own project, copy `awwwards` into your `.agents/skills/` directory:
+  ```bash
+  mkdir -p .agents/skills
+  cp -r <path-to-repo>/awwwards .agents/skills/
+  ```
+- **Global**: Copy or link the `awwwards` folder to your global Antigravity skills directory:
+  ```bash
+  mkdir -p ~/.gemini/config/skills
+  cp -r awwwards ~/.gemini/config/skills/
+  ```
+
+Start `agy`, open Antigravity IDE, or launch Antigravity 2.0 Desktop and trigger the skill via `/awwwards`.
+</details>
+
+<details>
 <summary>Manual install</summary>
 
-Copy the `awwwards/` folder into your agent's skills directory, for example
-`~/.claude/skills/awwwards`. Any agent that reads `SKILL.md` skills can use it.
+Copy the `awwwards/` folder into your agent's skills directory (for example `~/.claude/skills/awwwards`, `~/.gemini/config/skills/awwwards`, or `.agents/skills/awwwards`). Any agent that reads `SKILL.md` skills can use it.
 </details>
 
 ### Works with /anatomy
@@ -192,7 +211,7 @@ loading, and keeps content visible without JavaScript or with reduced motion.
 
 - **It takes a while.** A full run is concept, design system, build and several rounds of
   screenshots and fixes. Expect a long session and heavy token use, not a quick snippet.
-- **Results depend on the model.** It was built and tested with Claude Code and Codex. The
+- **Results depend on the model.** It was built and tested with Claude Code, Antigravity and Codex. The
   concept and the visual QA are only as good as the model doing them.
 - **Content is yours to finish.** Without real projects, photos and copy, the site ships with
   clearly marked placeholders that you replace.
@@ -203,8 +222,9 @@ loading, and keeps content visible without JavaScript or with reduced motion.
 The helpers in `awwwards/scripts/` work on any site, so you can use them on their own:
 
 ```bash
-node ~/.claude/skills/awwwards/scripts/audit.mjs https://your-site.com/
-node ~/.claude/skills/awwwards/scripts/shoot.mjs https://your-site.com/ --crawl --nav
+# Path depends on your agent (e.g. ~/.gemini/config/skills/ or ~/.claude/skills/)
+node <skill-path>/awwwards/scripts/audit.mjs https://your-site.com/
+node <skill-path>/awwwards/scripts/shoot.mjs https://your-site.com/ --crawl --nav
 ```
 
 | Script | Does |

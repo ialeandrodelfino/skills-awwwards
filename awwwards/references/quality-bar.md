@@ -99,6 +99,12 @@ critic that sees only the evidence scores like a jury. Pass this brief to a fres
 filling in the three paths. Give it nothing else: no `DESIGN.md`, no code, no concept card, no
 earlier scores, no notes on what you were going for.
 
+- **Google Antigravity (CLI `agy`, IDE, 2.0)**: Launch via `invoke_subagent` with `TypeName: "self"` (or `"research"`), `Role: "Awwwards QA Critic"`, passing the brief below in `Prompt`. The critic runs independently and reports back.
+- **Claude Code**: Launch via the `Task` tool.
+- **Codex & Other Multi-Agent Harnesses**: Spawn a fresh delegated worker/sub-session with this brief.
+- **Single-turn / Without subagents**: Only if your environment cannot launch subagents or delegate, score it yourself following the instructions below, strictly from the screenshots alone.
+
+
 ```
 You are an Awwwards juror reviewing a site you have never seen. You get only evidence.
 
