@@ -14,7 +14,7 @@ site is for its owner and their visitors. Award juries score Design 40%, Usabili
 Creativity 20% and Content 10%. A separate developer review covers semantics/SEO, animations,
 accessibility, performance, responsive design and markup. Sites of the Day average about 7.2 to
 7.6 out of 10, so aim for 8 or higher in every category of the QA score.
-`references/quality-bar.md` has the rubric and the real data behind it.
+`references/quality-bar.md` has the system, the rubric and the critic brief.
 
 **Skill root:** the directory containing this file (`$SKILL`; substitute the absolute path in
 commands). The scripts in `$SKILL/scripts` need Node 20+, plus Playwright in the project for

@@ -20,19 +20,6 @@ estimate.
   Animations/Transitions, Accessibility, WPO (web performance), Responsive Design, and
   Markup/Meta-data.**
 
-## Real scores of recent winners
-
-| Site of the Day | Overall | Design | Usab. | Creat. | Content | Dev: Sem/SEO | Anim | A11y | WPO | Resp | Markup |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Maria Vasilyeva portfolio, Oct 2026 | 7.28 | 7.31 | 7.02 | 7.56 | 7.33 | 7.20 | 8.00 | 6.40 | 7.60 | 7.40 | 7.00 |
-| LPAS architecture studio, Oct 2026 | 7.24 | 7.19 | 7.19 | 7.31 | 7.50 | 7.80 | 8.00 | 7.00 | 7.60 | 7.40 | 7.20 |
-| TWKS agency (older) | 7.52 | 7.58 | 7.42 | 7.51 | 7.59 | 7.67 | 8.00 | 6.67 | 6.67 | 7.00 | 7.67 |
-
-The pattern: **animations score highest (8.0), while accessibility and performance score
-lowest.** A site that pairs this level of motion with real accessibility and performance is
-ahead of the field. Only 3 of 11 top studio sites we probed shipped any
-`prefers-reduced-motion` handling.
-
 ## What gets punished
 
 - A polished template with no point of view. Effects bolted on rather than choreographed.
@@ -88,20 +75,21 @@ evidence, no points.
 
 **Developer (each 1 to 10):** Semantics/SEO, Animations/Transitions, Accessibility, WPO,
 Responsive, Markup/Meta-data. Use the `audit.mjs` and `shoot.mjs` reports as evidence. An 8
-needs everything in its row; each miss costs a point or more.
+needs everything in its row; each miss costs a point or more. The audit reads the HTML the
+server sends, while `report.json` reads the page after JavaScript ran. When they disagree (the
+audit finds no `<h1>`, `desktop.h1` lists one), the element only exists after JavaScript: that
+is a Semantics/SEO risk, not a missing element.
 
 | Area | Evidence | An 8 needs |
 |---|---|---|
 | Semantics/SEO | audit: lang, one `<h1>`, heading order, `<main>`, titles, descriptions, canonical, robots, sitemap, 404 status | 0 audit FAILs in the area, a unique title and description per page, a real 404 |
 | Animations/Transitions | `d-90`..`d-92` frames, `h-*` pairs, `hover`, `desktop.idleMotion`, `scrollFps` | a continuous transition between pages, no primary target in `noHoverChange` or a text-color-only `colorOnly`, smooth scroll |
 | Accessibility | `a11y` (axe), `keyboard`, `k-*` and `r-*` frames, `reduced.hiddenText`, `reduced.moving` | 0 serious or critical axe violations, a skip link first, every focus stop visible, `hiddenText` 0, nothing still moving under reduced motion |
-| WPO | `mobile.vitals`, `mobile.loaderMs`, `desktop.settledMs` and `mobile.settledMs`, `mobile.scrollFps`, the audit's heaviest-page line | throttled mobile LCP under 2.5 s, CLS under 0.05, a loader or intro done within 2.6 s, JS under 300 KB gzipped, a page under 3 MB |
+| WPO | `mobile.vitals`, `mobile.loaderMs` (null: no loader), `desktop.settledMs` and `mobile.settledMs`, `mobile.loadMs`, `mobile.scrollFps`, the audit's heaviest-page line | throttled mobile LCP under 2.5 s, CLS under 0.05, a loader or intro done within 2.6 s, JS under 300 KB gzipped, a page under 3 MB. `loadMs` is when the last asset arrived, not when visitors could read: judge waiting by LCP and the loader |
 | Responsive | `m-*` frames, `overflowX` and `offenders`, `smallTargets` | no overflow, tap targets of at least 24 px, a phone layout composed rather than squished |
 | Markup/Meta-data | audit: OG and Twitter tags, `og:image` loads, favicon, viewport, alt text, accessible names | 0 audit FAILs in the area, an OG image that loads |
 
-Weighted overall = 0.4 Design + 0.3 Usability + 0.2 Creativity + 0.1 Content. A site being
-built aims for 8.0 or higher. Real reviewers score lower than any assessment made from inside a
-build, so an 8 from the critic is roughly a competitive Site of the Day.
+Weighted overall = 0.4 Design + 0.3 Usability + 0.2 Creativity + 0.1 Content.
 
 ## Critic brief (for a fresh subagent on every QA pass)
 
@@ -111,7 +99,8 @@ filling in the three paths. Give it nothing else: no `DESIGN.md`, no code, no co
 earlier scores, no notes on what you were going for.
 
 ```
-You are an Awwwards juror reviewing a site you have never seen. You get only evidence.
+You are an Awwwards juror reviewing a site you have never seen. You get only evidence. Use
+only the files below: don't open the site, search the web, or read anything else about it.
 
 Rubric:      <absolute path to references/quality-bar.md>, the "Score rubric" section
 Screenshots: <absolute path to .shots/>. Each page has its own folder with a report.json;

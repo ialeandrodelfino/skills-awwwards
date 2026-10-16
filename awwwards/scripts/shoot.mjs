@@ -64,16 +64,30 @@ async function pickPages(start, max) {
   return [...types].map(([name, href]) => ({ name: name.replace(/[^a-z0-9-]/gi, '_'), url: href }));
 }
 
-// Runs before any page script: records LCP (and its element) and load-time CLS.
+// Runs before any page script: records LCP (and its element), load-time CLS, and whether the
+// page has a #loader at all (one that removes itself early would otherwise go unseen).
 const vitalsInit = () => {
-  window.__vitals = { lcpMs: null, lcpElement: null, cls: 0 };
+  window.__vitals = { lcpMs: null, lcpElement: null, cls: 0, hadLoader: false };
+  document.addEventListener('DOMContentLoaded', () => { window.__vitals.hadLoader = !!document.getElementById('loader'); });
   const describe = (e) => !e ? null : e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/)[0] : '');
   try {
     new PerformanceObserver((l) => { for (const e of l.getEntries()) { window.__vitals.lcpMs = Math.round(e.startTime); window.__vitals.lcpElement = describe(e.element) || e.url || null; } }).observe({ type: 'largest-contentful-paint', buffered: true });
     new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__vitals.cls += e.value; }).observe({ type: 'layout-shift', buffered: true });
   } catch {}
 };
-const vitals = (page) => page.evaluate(() => ({ ...window.__vitals, cls: Math.round(window.__vitals.cls * 1000) / 1000 }));
+const vitals = (page) => page.evaluate(() => {
+  const { hadLoader, ...v } = window.__vitals;
+  return { ...v, cls: Math.round(v.cls * 1000) / 1000 };
+});
+const hadLoader = (page) => page.evaluate(() => !!window.__vitals?.hadLoader || !!document.getElementById('loader'));
+
+// Opens a page the way a visitor meets it: as soon as the HTML is parsed, then up to `cap` ms
+// for the load event. A heavy page on the throttled phone can take longer than any timeout to
+// fire load, while visitors already see it. Returns ms from `t0` to load, or null if it never came.
+async function open(page, url, t0, cap = 30000) {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  return page.waitForLoadState('load', { timeout: cap }).then(() => Date.now() - t0, () => null);
+}
 
 // A loader is any #loader element; it is done when removed or hidden.
 const loaderGone = () => { const l = document.getElementById('loader'); if (!l || l.hidden) return true; const cs = getComputedStyle(l); return cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0; };
@@ -101,6 +115,8 @@ const pxDiff = (scratch, a, b, r = null) => scratch.evaluate(async ([a, b, r]) =
 // Waits at least `min` ms, then until the screen stops changing, for at most `max` ms more. Sites
 // without a #loader (most sites not built on the engine) often run an intro that a fixed wait
 // would shoot mid-animation. Small ambient motion (particles, a slow shader) counts as settled.
+// Still means three checks in a row (about 1.2 s) within 1% of the frame that began the run:
+// intros pause between steps, and a single still pair mistook a pause for the end.
 // Returns `settledMs`, the ms from `t0` by which the screen was still (null if it never was), and
 // `changing`, whether it was still changing once `min` had passed.
 async function settle(page, t0, min, max) {
@@ -108,16 +124,21 @@ async function settle(page, t0, min, max) {
   const scratch = await page.context().newPage();
   try {
     const end = Date.now() + max;
-    let prev = await page.screenshot();
-    let at = Date.now();
+    let base = await page.screenshot();
+    let since = Date.now();
+    let still = 0;
     let changing = false;
     while (Date.now() < end) {
       await page.waitForTimeout(400);
       const next = await page.screenshot();
-      if (await pxDiff(scratch, prev, next) < 0.01) return { settledMs: at - t0, changing };
-      changing = true;
-      prev = next;
-      at = Date.now();
+      if (await pxDiff(scratch, base, next) < 0.01) {
+        if (++still >= 3) return { settledMs: since - t0, changing };
+      } else {
+        changing = true;
+        still = 0;
+        base = next;
+        since = Date.now();
+      }
     }
     return { settledMs: null, changing };
   } finally {
@@ -419,18 +440,22 @@ async function shootPage(browser, axeSource, url, out) {
   };
 
   // Desktop
+  let introMs = 0; // from the page being ready (loaded, loader gone) to the hero frame
   {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     await ctx.addInitScript(vitalsInit);
     const page = await ctx.newPage();
     watch(page, 'desktop');
     const t0 = Date.now();
-    await page.goto(url, { waitUntil: 'load' });
+    report.desktop.loadMs = await open(page, url, t0);
+    const loader = await hadLoader(page);
     await page.waitForTimeout(400);
     await shot(page, 'd-00-firstpaint');
     await page.waitForFunction(loaderGone, null, { timeout: 8000 }).catch(() => report.errors.push('[desktop] loader still present after 8s'));
-    report.desktop.loaderMs = Date.now() - t0;
+    const ready = Date.now();
+    report.desktop.loaderMs = loader ? ready - t0 : null;
     report.desktop.settledMs = (await settle(page, t0, 1600, 8000)).settledMs;
+    introMs = Date.now() - ready;
     await shot(page, 'd-01-hero');
     report.desktop.vitals = await vitals(page);
     await page.mouse.move(720, 450);
@@ -447,13 +472,33 @@ async function shootPage(browser, axeSource, url, out) {
     report.desktop.scrollFps = await fpsP;
     if (nav) {
       await wheelTo(page, 0);
-      const href = await page.evaluate(() => [...document.querySelectorAll('a[href^="/"]')].map((a) => a.getAttribute('href'))
-        .find((h) => h && h !== '/' && !h.startsWith('/#') && new URL(h, location.href).pathname !== location.pathname));
+      // Up to four links to other pages on this site, relative or absolute. Some can't be
+      // clicked (inside a carousel, an off-canvas menu), so each gets a short try.
+      const links = await page.evaluate(() => {
+        const out = [];
+        for (const a of document.querySelectorAll('a[href]')) {
+          const u = new URL(a.href, location.href);
+          if (u.origin !== location.origin || u.pathname === location.pathname || a.target === '_blank' || a.hasAttribute('download')) continue;
+          if (/\.(?!html?$)[a-z0-9]{2,5}$/i.test(u.pathname) || out.some((l) => l.path === u.pathname)) continue;
+          a.setAttribute('data-qa-nav', out.length);
+          out.push({ i: out.length, path: u.pathname });
+          if (out.length >= 4) break;
+        }
+        return out;
+      });
+      let href = null;
+      for (const l of links) {
+        const link = page.locator(`[data-qa-nav="${l.i}"]`);
+        try {
+          await link.scrollIntoViewIfNeeded({ timeout: 3000 });
+          await page.waitForTimeout(800);
+          await link.click({ timeout: 3000 });
+          href = l.path;
+          break;
+        } catch {}
+      }
+      if (!href) report.notes.push(`--nav: no link to another page could be clicked (tried ${links.map((l) => l.path).join(', ') || 'none found'})`);
       if (href) {
-        const link = page.locator(`a[href="${href}"]`).first();
-        await link.scrollIntoViewIfNeeded();
-        await page.waitForTimeout(800);
-        await link.click();
         await page.waitForTimeout(300);
         await shot(page, 'd-90-transition-a');
         await page.waitForTimeout(400);
@@ -464,7 +509,7 @@ async function shootPage(browser, axeSource, url, out) {
         await page.waitForTimeout(2200);
         await shot(page, 'd-91-after-nav');
         report.desktop.nav = { href, scrollYAfter: await page.evaluate(() => scrollY), title: await page.title() };
-        await page.goBack();
+        await page.goBack({ timeout: 10000 }).catch(() => report.notes.push('--nav: going back did not finish loading within 10 s'));
         await page.waitForTimeout(2500);
         await shot(page, 'd-92-back');
       }
@@ -472,16 +517,17 @@ async function shootPage(browser, axeSource, url, out) {
     await ctx.close();
   }
 
-  // Fresh desktop loads below wait out the intro the desktop pass measured (time from the loader
-  // ending to a still screen), or the fixed wait when there was none or it never ended.
-  const introWait = (fixed) => Math.max(fixed, (report.desktop.settledMs ?? 0) - (report.desktop.loaderMs ?? 0));
+  // Fresh desktop loads below wait as long as the desktop pass did between the page being ready
+  // and the hero frame, so their frames don't land mid-intro either. With a #loader, its end
+  // already marks the intro's end, and the fixed wait covers the hero's entrance.
+  const introWait = (fixed) => (report.desktop.loaderMs != null ? fixed : Math.max(fixed, introMs));
 
   // Keyboard: a fresh load, then Tab from the top of the page.
   {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     watch(page, 'keyboard');
-    await page.goto(url, { waitUntil: 'load' });
+    await open(page, url, Date.now());
     await page.waitForFunction(loaderGone, null, { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(introWait(1600));
     report.keyboard = await keyboard(page, shot);
@@ -493,7 +539,7 @@ async function shootPage(browser, axeSource, url, out) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     watch(page, 'hover');
-    await page.goto(url, { waitUntil: 'load' });
+    await open(page, url, Date.now());
     await page.waitForFunction(loaderGone, null, { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(introWait(2200));
     const { idleMotion, idleAt, ...h } = await hover(page, save);
@@ -516,13 +562,14 @@ async function shootPage(browser, axeSource, url, out) {
       await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 150, downloadThroughput: (1.6 * 1024 * 1024) / 8, uploadThroughput: (750 * 1024) / 8 });
     }
     const t0 = Date.now();
-    await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+    const loadMs = await open(page, url, t0, 60000);
+    const loader = await hadLoader(page);
     await page.waitForFunction(loaderGone, null, { timeout: 20000 }).catch(() => report.errors.push('[mobile] loader still present after 20s'));
-    const loaderMs = Date.now() - t0;
+    const loaderMs = loader ? Date.now() - t0 : null;
     const { settledMs } = await settle(page, t0, 1800, 8000);
     await shot(page, 'm-01-hero');
     const v = await vitals(page);
-    report.mobile = { throttled: throttle, loaderMs, settledMs, vitals: v, ...(await metrics(page)) };
+    report.mobile = { throttled: throttle, loadMs, loaderMs, settledMs, vitals: v, ...(await metrics(page)) };
     report.mobile.scrollFps = await fps(page, 2500, 6);
     await page.evaluate(() => scrollTo(0, 0));
     const max = report.mobile.height - 844;
@@ -541,7 +588,7 @@ async function shootPage(browser, axeSource, url, out) {
     const page = await ctx.newPage();
     watch(page, 'reduced');
     const t0 = Date.now();
-    await page.goto(url, { waitUntil: 'load' });
+    await open(page, url, Date.now());
     // `moving`: the screen was still changing 1.5 s after load, with reduced motion requested.
     const { changing: moving } = await settle(page, t0, 1500, 4000);
     await shot(page, 'r-01-hero');
@@ -561,6 +608,7 @@ async function shootPage(browser, axeSource, url, out) {
 
   report.notes.push('desktop FPS runs headless on a software GPU: treat it as a floor, not a measurement of real hardware');
   if (throttle) report.notes.push('mobile runs at 4x CPU slowdown on slow 4G: mobile.vitals and mobile.scrollFps are the numbers that count');
+  report.notes.push('loadMs: ms from navigation to the load event, null if it had not fired after 30 s (desktop) or 60 s (phone); a heavy page takes long, while visitors see content at vitals.lcpMs. loaderMs: ms until the #loader ended, null when the page has none');
   report.notes.push('settledMs: ms from navigation by which the first screen stopped changing, never before the fixed wait. null: still changing at the cap, either a long intro or continuous motion (a live shader, video); d-01-hero / m-01-hero tell which. reduced.moving: the screen was still changing 1.5 s after load with reduced motion on');
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
   return report;
@@ -597,7 +645,15 @@ if (crawl) {
   const summary = [];
   for (const t of targets) {
     console.error(`shooting ${t.name}: ${t.url}`);
-    summary.push(brief(t.name, await shootPage(browser, axeSource, t.url, path.join(outRoot, t.name))));
+    // One page the browser can't get through must not cost the rest of the crawl.
+    try {
+      summary.push(brief(t.name, await shootPage(browser, axeSource, t.url, path.join(outRoot, t.name))));
+    } catch (e) {
+      const why = e.message.split('\n')[0];
+      console.error(`  failed: ${why}`);
+      summary.push({ page: t.name, url: t.url, shootFailed: why });
+      for (const c of browser.contexts()) await c.close().catch(() => {});
+    }
   }
   fs.writeFileSync(path.join(outRoot, 'summary.json'), JSON.stringify(summary, null, 2));
   console.log(JSON.stringify(summary, null, 2));

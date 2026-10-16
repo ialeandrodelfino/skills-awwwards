@@ -226,11 +226,18 @@ You get `.jury/<host>/scorecard.md`, next to every screenshot and report behind 
 local project, it builds and scores the production output, never the dev server. Re-scoring
 after fixes uses a new critic, so it never anchors on the old numbers.
 
+**Checked against real juries.** Run blind on two October 2026 Sites of the Day, the critic
+scored 6.15 and 6.10 where the jury gave 7.28 and 7.24: stricter, by a steady 1.1. So the card
+shows the critic's score and a jury estimate, and the band comes from the estimate. The critic
+is hardest on what juries rarely check (accessibility, SEO, performance on a throttled phone),
+which is why its fix list catches things a jury lets slide.
+
 /awwwards runs the same rubric, scripts and blind critic in its own QA loop, so a site it built
 and a site you built are judged the same way.
 
 - **It's an estimate.** /jury isn't affiliated with Awwwards. The criteria and weights are
-  theirs, and public.
+  theirs, and public. The jury estimate rests on two sites, both winners; how it holds for
+  weaker sites isn't measured yet.
 - **It judges stills and measurements.** How motion feels, and sound, stay out of the score.
 - **It needs a page it can reach.** Anything behind a login can't be scored; give it a local
   build instead.
@@ -261,7 +268,7 @@ node ~/.claude/skills/jury/scripts/shoot.mjs https://your-site.com/ --crawl --na
 awwwards/
   SKILL.md            the workflow and the hard rules
   references/
-    quality-bar.md    scoring weights, real winner scores, rubric, critic brief  (copied from jury/)
+    quality-bar.md    scoring weights, rubric, critic brief  (copied from jury/)
     concepts.md       finding an idea that can't be moved to someone else
     art-direction.md  patterns from recent winners, archetypes, AI defaults to avoid
     typography.md     curated free fonts with sources, scales, setting display type
@@ -279,7 +286,8 @@ awwwards/
 jury/
   SKILL.md            the review workflow: target, evidence, blind critic, score card
   references/
-    quality-bar.md    scoring weights, real winner scores, rubric, critic brief
+    quality-bar.md    scoring weights, rubric, critic brief
+    calibration.md    the critic against real juries, for the score card (never shown to the critic)
   scripts/            shoot, audit, browser, serve: no dependencies except Playwright (and axe-core)
 tests/
   nexttest/           Next.js app the generated references are copied from

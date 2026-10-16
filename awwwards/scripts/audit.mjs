@@ -149,9 +149,12 @@ let sitemapOk = false;
 for (const u of [...maps, new URL('/sitemap.xml', origin).href, new URL('/sitemap-index.xml', origin).href]) if ((await get(u)).status === 200) { sitemapOk = true; break; }
 if (!sitemapOk) add('WARN', 'site', 'no sitemap');
 const ogs = new Set([...pages.values()].map((h) => meta(h, 'og:image')).filter(Boolean));
+// As written (a live site, or a CDN), else mapped onto this server (a local build whose tags
+// already point at the production domain).
+const isImage = (r) => r.status === 200 && r.type.startsWith('image/');
 for (const og of ogs) {
-  const r = await get(onSite(new URL(og, origin).href));
-  if (r.status !== 200 || !r.type.startsWith('image/')) add('FAIL', 'site', `og:image ${new URL(og, origin).pathname} does not load (create a 1200x630 image)`);
+  const abs = new URL(og, origin).href;
+  if (!isImage(await get(abs)) && !isImage(await get(onSite(abs)))) add('FAIL', 'site', `og:image ${abs} does not load (create a 1200x630 image)`);
 }
 
 // Weight: what each page actually downloads (gzip size for text assets).

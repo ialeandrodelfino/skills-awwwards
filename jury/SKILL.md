@@ -14,7 +14,9 @@ with evidence for every number and a ranked list of fixes.
 
 **Skill root:** the directory containing this file (`$SKILL`; substitute the absolute path in
 commands). The scripts need Node 20+ and Playwright, plus axe-core for the accessibility pass.
-`references/quality-bar.md` has the system, real winner scores, the rubric and the critic brief.
+`references/quality-bar.md` has the system, the rubric and the critic brief.
+`references/calibration.md` has the measured gap between this critic and real juries. It is for
+you, for the score card. Never give it to the critic.
 
 ## Why blind
 
@@ -81,8 +83,8 @@ node $SKILL/scripts/audit.mjs <url> > <abs>/.jury/<host>/audit.txt
 
 - **With subagents:** give a fresh one the critic brief from `references/quality-bar.md`
   ("Critic brief"), with its three paths filled in (the rubric, `.jury/<host>/shots/`,
-  `.jury/<host>/audit.txt`). Give it nothing else. It reads every screenshot, so your own
-  context stays small.
+  `.jury/<host>/audit.txt`). Give it nothing else, and never `calibration.md`. It reads every
+  screenshot, so your own context stays small.
 - **Without subagents:** score it yourself under the same brief, from the evidence alone, and
   mark the card as a self-score.
 - **If you built or edited this site in this conversation**, a self-score isn't blind. Use a
@@ -97,8 +99,9 @@ Write `.jury/<host>/scorecard.md` and give the same card in chat:
 Estimate, not affiliated with Awwwards. <Independent critic | Self-score>, from <n> pages on <date>.
 
 **The idea, as the critic read it:** one sentence
-**Overall: 7.4** (0.4 Design + 0.3 Usability + 0.2 Creativity + 0.1 Content)
-**Band:** below Honorable Mention (under 6.5) | Honorable Mention range (6.5 to 7.9) | Site of the Day contender (8 and up)
+**Critic overall: 6.2** (0.4 Design + 0.3 Usability + 0.2 Creativity + 0.1 Content, on the critic's strict scale)
+**Jury estimate: about 7.3** (critic + 1.1, measured on two recent Sites of the Day)
+**Band, from the estimate:** below Honorable Mention (under 6.5) | Honorable Mention range (6.5 to 7.1) | Site of the Day range (7.2 and up)
 
 | Criterion | Score | Evidence |
 |---|---|---|
@@ -126,6 +129,10 @@ Mobile LCP and CLS, loader time, FPS, serious axe violations, overflow, `noHover
 
 Not scored: anything stills can't show (how motion feels, sound).
 ```
+
+Take the offset for the jury estimate from `references/calibration.md` (the 1.1 above is the
+offset when this was written) and follow its rules: the critic's own numbers stay as scored, and
+the developer areas get no jury estimate.
 
 Then, in chat only:
 - If the user told you what the site is meant to say, one line: does the critic's reading
