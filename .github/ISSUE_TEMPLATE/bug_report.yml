@@ -9,7 +9,8 @@ body:
       options:
         - Install (npx skills add or the Claude Code plugin)
         - Helper script (audit, shoot, og, font, photos, serve)
-        - Skill output (the site the agent built)
+        - /awwwards output (the site the agent built)
+        - /jury output (the score card)
         - Docs
     validations:
       required: true

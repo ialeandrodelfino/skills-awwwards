@@ -60,6 +60,11 @@ jobs:
               if (!p.source.startsWith("./")) throw new Error(`${p.name}: source must start with ./`);
               if (!fs.existsSync(`${p.source}/SKILL.md`)) throw new Error(`${p.name}: no SKILL.md at ${p.source}`);
               console.log(`ok ${p.name}`);
+            }
+            const listed = new Set(m.plugins.map((p) => p.source.replace(/^\.\//, "").replace(/\/$/, "")));
+            for (const d of fs.readdirSync(".", { withFileTypes: true })) {
+              if (d.isDirectory() && fs.existsSync(`${d.name}/SKILL.md`) && !listed.has(d.name))
+                throw new Error(`${d.name}: skill folder has no plugin entry in marketplace.json`);
             }'
 
       - name: skills CLI finds every skill

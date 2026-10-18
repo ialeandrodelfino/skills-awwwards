@@ -34,6 +34,11 @@ node ../smoke.mjs http://127.0.0.1:4401
 `build.py` fails instead of writing a wrong reference when the engine (TS or CSS) differs between
 the fixtures, a placeholder is left unfilled, or one of its text substitutions no longer matches.
 
+`build.py` also copies files that a smaller skill owns into `awwwards/`, so /awwwards still works
+when it is installed alone. The list is `COPIES` in `build.py`: today `jury/scripts/{shoot,audit,
+browser,serve}.mjs` and `jury/references/quality-bar.md`. Edit the file in `jury/`, then run
+`build.py`; each copy starts with a line saying where it came from.
+
 CI runs `build.py --check`, then builds, lints or type-checks, and smoke-tests both fixtures on
 every push. Every Monday it repeats the build and smoke test against the latest framework and
 library releases, which is what a fresh scaffold installs, and opens an issue if that fails.

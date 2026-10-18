@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Generated from jury/scripts/serve.mjs by tests/_gen/build.py; edit there, not here.
 // Zero-dependency static server for a built site (clean URLs, 404.html, correct MIME types).
 // For static output folders (Astro dist/, Next `output: 'export'` out/, Vite dist/).
 //   node serve.mjs [dist] [--port 4400]

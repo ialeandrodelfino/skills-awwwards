@@ -18,7 +18,7 @@
   <a href="#install"><img src="https://img.shields.io/badge/Install-npx_skills_add-d7d7d0?style=for-the-badge&labelColor=1b1b19&logo=npm&logoColor=white" alt="Install with npx skills add"></a>
 </p>
 
-[Demo](#demo) · [Install](#install) · [Usage](#usage) · [How it works](#how-it-works) · [Limits](#limits)
+[Demo](#demo) · [Install](#install) · [Usage](#usage) · [How it works](#how-it-works) · [Limits](#limits) · [/jury](#jury)
 
 </div>
 
@@ -37,6 +37,9 @@ npx skills add juliobsz/skills -g
 ```
 
 Open a **new** agent session, then type `/awwwards` or just ask for a website.
+
+The same repo has [/jury](#jury), which scores any site the way an Awwwards jury would: yours,
+one /awwwards built, or a competitor's.
 
 ## Demo
 
@@ -58,9 +61,10 @@ npx skills add juliobsz/skills -g
 |---|---|
 | `npx skills add juliobsz/skills -g -a claude-code` | Claude Code only (use `codex`, `cursor`… for others) |
 | `npx skills add juliobsz/skills` | This project only, instead of your user folder |
+| `npx skills add juliobsz/skills -g --skill jury` | One skill only (`awwwards` or `jury`) |
 | `npx skills add juliobsz/skills -g --copy` | Copy the files instead of linking them |
 | `npx skills update -g` | Update to the latest version |
-| `npx skills remove awwwards -g` | Uninstall |
+| `npx skills remove awwwards jury -g` | Uninstall |
 
 The CLI collects anonymous usage data. Set `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` to turn
 it off.
@@ -72,11 +76,13 @@ If you prefer Claude Code's plugin system, which updates the skill for you:
 
 ```
 /plugin install awwwards --marketplace juliobsz/skills
+/plugin install jury --marketplace juliobsz/skills
 ```
 
 On Claude Code before 2.1.275, run `/plugin marketplace add juliobsz/skills` and then
-`/plugin install awwwards@juliobsz`. The skill then runs as `/awwwards:awwwards`. Use the
-plugin or the skills CLI, not both, or the skill shows up twice.
+`/plugin install awwwards@juliobsz` (or `jury@juliobsz`). The skills then run as
+`/awwwards:awwwards` and `/jury:jury`. Use the plugin or the skills CLI, not both, or each
+skill shows up twice.
 </details>
 
 <details>
@@ -84,24 +90,27 @@ plugin or the skills CLI, not both, or the skill shows up twice.
 
 For Google Antigravity across all surfaces (CLI `agy`, Antigravity IDE, Antigravity 2.0):
 
-- **Workspace**: If working inside this repository, `.agents/skills.json` automatically registers `awwwards`. In your own project, copy `awwwards` into your `.agents/skills/` directory:
+- **Workspace**: If working inside this repository, `.agents/skills.json` automatically registers `awwwards` and `jury`. In your own project, copy them into your `.agents/skills/` directory:
   ```bash
   mkdir -p .agents/skills
-  cp -r <path-to-repo>/awwwards .agents/skills/
+  cp -r <path-to-repo>/awwwards <path-to-repo>/jury .agents/skills/
   ```
-- **Global**: Copy or link the `awwwards` folder to your global Antigravity skills directory:
+- **Global**: Copy or link the folders to your global Antigravity skills directory:
   ```bash
   mkdir -p ~/.gemini/config/skills
-  cp -r awwwards ~/.gemini/config/skills/
+  cp -r awwwards jury ~/.gemini/config/skills/
   ```
 
-Start `agy`, open Antigravity IDE, or launch Antigravity 2.0 Desktop and trigger the skill via `/awwwards`.
+Start `agy`, open Antigravity IDE, or launch Antigravity 2.0 Desktop and trigger the skills via `/awwwards` or `/jury`.
 </details>
 
 <details>
 <summary>Manual install</summary>
 
-Copy the `awwwards/` folder into your agent's skills directory (for example `~/.claude/skills/awwwards`, `~/.gemini/config/skills/awwwards`, or `.agents/skills/awwwards`). Any agent that reads `SKILL.md` skills can use it.
+Copy the `awwwards/` folder (and `jury/`, if you want it) into your agent's skills directory,
+for example `~/.claude/skills/awwwards`, `~/.gemini/config/skills/awwwards` or
+`.agents/skills/awwwards`. Any agent that reads `SKILL.md` skills can use them. Each folder
+works on its own.
 </details>
 
 ### Works with /anatomy
@@ -122,16 +131,17 @@ end when a figure would have helped.
 
 - **Node 22.20+** for the skills CLI. The helper scripts need Node 20+.
 - **Playwright** in the site's project for screenshots and the OG image, and **axe-core** for
-  the accessibility pass. The skill installs both as dev dependencies when it needs them, and
-  uses a Chromium you already have when it can.
+  the accessibility pass. `/awwwards` installs both as dev dependencies when it needs them.
+  `/jury` leaves the project it reviews alone and installs them once into `~/.cache/jury`.
+  Both use a Chromium you already have when they can.
 - **A model that can read images**, so the QA loop can look at its own screenshots.
 - **A Vercel, Netlify or Cloudflare account** only if you want it to deploy.
 
 <details>
 <summary>Troubleshooting</summary>
 
-- **`/awwwards` isn't found.** Start a new session; agents read their skills folder at startup.
-  Then run `npx skills list -g` to see where it was installed.
+- **`/awwwards` or `/jury` isn't found.** Start a new session; agents read their skills folder
+  at startup. Then run `npx skills list -g` to see where it was installed.
 - **It shows up twice.** You installed it two ways (for example the skills CLI and the plugin).
   Remove one with `npx skills remove awwwards -g` or `/plugin uninstall awwwards@juliobsz`.
 - **Installed into the wrong agent.** Name the target with `-a`, for example `-a codex`.
@@ -217,24 +227,61 @@ loading, and keeps content visible without JavaScript or with reduced motion.
   clearly marked placeholders that you replace.
 - **8/10 is its own score.** The rubric keeps it honest, but you're the final judge.
 
+## /jury
+
+Scores any website the way an Awwwards jury would. It doesn't have to be a site /awwwards built.
+
+```
+/jury https://your-site.com
+/jury score this project
+/jury https://mine.com vs https://theirs.com
+```
+
+It shoots one page of every type on desktop, on a throttled phone, with reduced motion and
+from the keyboard. It measures LCP, CLS, FPS, axe and hover feedback, and audits SEO and
+metadata. Then a fresh critic that never sees the code, the design notes or your pitch scores
+Design, Usability, Creativity and Content, plus the six developer areas. Every number cites a
+screenshot or a measurement, and the fixes come ranked by how much score they'd gain.
+
+You get `.jury/<host>/scorecard.md`, next to every screenshot and report behind it. Given a
+local project, it builds and scores the production output, never the dev server. Re-scoring
+after fixes uses a new critic, so it never anchors on the old numbers.
+
+**Checked against real juries.** Run blind on two October 2026 Sites of the Day, the critic
+scored 6.15 and 6.10 where the jury gave 7.28 and 7.24: stricter, by a steady 1.1. So the card
+shows the critic's score and a jury estimate, and the band comes from the estimate. The critic
+is hardest on what juries rarely check (accessibility, SEO, performance on a throttled phone),
+which is why its fix list catches things a jury lets slide.
+
+/awwwards runs the same rubric, scripts and blind critic in its own QA loop, so a site it built
+and a site you built are judged the same way.
+
+- **It's an estimate.** /jury isn't affiliated with Awwwards. The criteria and weights are
+  theirs, and public. The jury estimate rests on two sites, both winners; how it holds for
+  weaker sites isn't measured yet.
+- **It judges stills and measurements.** How motion feels, and sound, stay out of the score.
+- **It needs a page it can reach.** Anything behind a login can't be scored; give it a local
+  build instead.
+
 ## Standalone scripts
 
-The helpers in `awwwards/scripts/` work on any site, so you can use them on their own:
+The helpers work on any site, so you can use them on their own. The QA scripts live in
+`jury/scripts/`, and /awwwards carries a copy:
 
 ```bash
 # Path depends on your agent (e.g. ~/.gemini/config/skills/ or ~/.claude/skills/)
-node <skill-path>/awwwards/scripts/audit.mjs https://your-site.com/
-node <skill-path>/awwwards/scripts/shoot.mjs https://your-site.com/ --crawl --nav
+node <skill-path>/jury/scripts/audit.mjs https://your-site.com/
+node <skill-path>/jury/scripts/shoot.mjs https://your-site.com/ --crawl --nav
 ```
 
-| Script | Does |
-|---|---|
-| `audit.mjs` | Crawl a build: SEO, a11y, weight, placeholders, AI-copy tells |
-| `shoot.mjs` | Screenshots of every page type: LCP/CLS on a throttled phone, FPS, overflow, tap targets, axe, keyboard focus, rest/hover pairs per pointer target, idle motion, transitions (needs Playwright; axe-core optional) |
-| `og.mjs` | Render the OG image from the live hero (needs Playwright) |
-| `font.mjs` | Self-host Fontshare / Google fonts (CSS or `next/font` output) |
-| `photos.mjs` | Contact sheets of free photos for marked placeholders |
-| `serve.mjs` | Static server for build output |
+| Script | In | Does |
+|---|---|---|
+| `audit.mjs` | jury, awwwards | Crawl a build: SEO, a11y, weight, placeholders, AI-copy tells |
+| `shoot.mjs` | jury, awwwards | Screenshots of every page type: LCP/CLS on a throttled phone, FPS, overflow, tap targets, axe, keyboard focus, rest/hover pairs per pointer target, idle motion, transitions (needs Playwright; axe-core optional) |
+| `serve.mjs` | jury, awwwards | Static server for build output |
+| `og.mjs` | awwwards | Render the OG image from the live hero (needs Playwright) |
+| `font.mjs` | awwwards | Self-host Fontshare / Google fonts (CSS or `next/font` output) |
+| `photos.mjs` | awwwards | Contact sheets of free photos for marked placeholders |
 
 <details>
 <summary>Repository layout</summary>
@@ -243,7 +290,7 @@ node <skill-path>/awwwards/scripts/shoot.mjs https://your-site.com/ --crawl --na
 awwwards/
   SKILL.md            the workflow and the hard rules
   references/
-    quality-bar.md    scoring weights, real winner scores, rubric, critic brief
+    quality-bar.md    scoring weights, rubric, critic brief  (copied from jury/)
     concepts.md       finding an idea that can't be moved to someone else
     art-direction.md  patterns from recent winners, archetypes, AI defaults to avoid
     typography.md     curated free fonts with sources, scales, setting display type
@@ -257,11 +304,17 @@ awwwards/
     nextjs.md         Next.js adapter, layout, metadata, fonts  (generated)
     astro.md          Astro adapter and layout                  (generated)
     ship.md           final checks and deploy
-  scripts/            Node helpers, no dependencies except Playwright (and axe-core) for screenshots
+  scripts/            Node helpers; shoot, audit, browser and serve are copied from jury/
+jury/
+  SKILL.md            the review workflow: target, evidence, blind critic, score card
+  references/
+    quality-bar.md    scoring weights, rubric, critic brief
+    calibration.md    the critic against real juries, for the score card (never shown to the critic)
+  scripts/            shoot, audit, browser, serve: no dependencies except Playwright (and axe-core)
 tests/
   nexttest/           Next.js app the generated references are copied from
   astrotest/          Astro app, same engine
-  _gen/               templates and build.py that write the generated references
+  _gen/               templates and build.py that write the generated references and copies
   smoke.mjs           browser smoke test run against both fixtures in CI
 .claude-plugin/       Claude Code plugin marketplace
 .github/              CI workflow, issue and PR templates
@@ -270,8 +323,8 @@ tests/
 
 ## Security
 
-A skill is instructions your agent follows, and this one has it run builds and scripts on your
-machine. Read `awwwards/SKILL.md` before installing, as you would any code you run. Nothing is
+A skill is instructions your agent follows, and these have it run builds and scripts on your
+machine. Read each `SKILL.md` before installing, as you would any code you run. Nothing is
 deployed without your confirmation.
 
 ## Contributing
@@ -284,12 +337,13 @@ patterns in `awwwards/references/`.
    folder that has one. For the Claude Code plugin, also add an entry to
    `.claude-plugin/marketplace.json`. Engine and stack code lives in `tests/nexttest` and
    `tests/astrotest`, not in the markdown: edit it there and run `python tests/_gen/build.py`
-   (see `tests/README.md`).
+   (see `tests/README.md`). The QA scripts and the rubric live in `jury/`, and the same command
+   copies them into `awwwards/`, so edit them in `jury/`.
 3. Test it: `npx skills add . -g -a claude-code`, then run the skill in an agent.
 4. Open a pull request. The template asks what changed and what you built to check it; CI
    checks script syntax, `SKILL.md` frontmatter, the plugin marketplace and that the skills
    CLI finds every skill, on Linux, macOS and Windows. It also builds and smoke-tests both fixture
-   apps and fails if the generated references are out of date.
+   apps and fails if the generated references or copies are out of date.
 
 ## Support
 
