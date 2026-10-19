@@ -32,9 +32,20 @@ const strip = (html) => html
   .replace(/&amp;/g, '&')
   .replace(/&#x27;|&#39;|&rsquo;/g, "'")
   .replace(/\s+/g, ' ');
-const attr = (tag, name) => (tag.match(new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i')) || [])[2] ?? null;
+// Attributes as HTML parses them: double-quoted, single-quoted, unquoted (minifiers drop quotes:
+// <html lang=en>) or bare (<img alt>, an empty value).
+const ATTR = /\s([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+const attrs = (tag) => {
+  const out = {};
+  for (const m of tag.replace(/^<[^\s>]+/, '').matchAll(ATTR)) out[m[1].toLowerCase()] ??= m[2] ?? m[3] ?? m[4] ?? '';
+  return out;
+};
+const attr = (tag, name) => attrs(tag)[name] ?? null;
+const TAG_BODY = `(?:"[^"]*"|'[^']*'|[^'">])*`; // a '>' inside a quoted value does not end the tag
+const tags = (html, name) => html.match(new RegExp(`<${name}\\b${TAG_BODY}>`, 'gi')) || [];
+const rels = (tag) => (attr(tag, 'rel') || '').toLowerCase().split(/\s+/);
 const meta = (html, key) => {
-  const tag = (html.match(new RegExp(`<meta[^>]+(?:name|property)=["']${key}["'][^>]*>`, 'i')) || [])[0];
+  const tag = tags(html, 'meta').find((t) => [attr(t, 'name'), attr(t, 'property')].some((v) => v?.toLowerCase() === key));
   return tag ? attr(tag, 'content') : null;
 };
 const onSite = (u) => { const x = new URL(u); return new URL(x.pathname + x.search, origin).href; }; // production URLs → local server
@@ -66,9 +77,11 @@ while (queue.length && pages.size < maxPages) {
   if (!r.type.includes('html')) continue;
   const html = r.body.toString('utf8');
   pages.set(u, html);
-  for (const m of html.matchAll(/<a\b[^>]*\shref=["']([^"'#]+)[^"']*["']/gi)) {
+  for (const a of tags(html, 'a')) {
+    const href = attr(a, 'href');
+    if (!href || href.startsWith('#')) continue;
     let next;
-    try { next = new URL(m[1].replace(/&amp;/g, '&'), u); } catch { continue; }
+    try { next = new URL(href.replace(/&amp;/g, '&'), u); } catch { continue; }
     next.hash = ''; next.search = '';
     if (next.origin !== origin || seen.has(next.href) || /\.(?!html?$)[a-z0-9]{2,5}$/i.test(next.pathname)) continue;
     seen.add(next.href);
@@ -81,17 +94,18 @@ for (const [u, html] of pages) {
   const where = new URL(u).pathname;
   const head = html.match(/<head[\s\S]*?<\/head>/i)?.[0] || '';
   const text = strip(html.replace(/<head[\s\S]*?<\/head>/i, ''));
-  if (!/<html[^>]*\slang=["'][^"']+["']/i.test(html)) add('FAIL', where, '<html> has no lang');
+  if (!attr(tags(html, 'html')[0] || '', 'lang')?.trim()) add('FAIL', where, '<html> has no lang');
   const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim();
   if (!title) add('FAIL', where, 'missing <title>');
   else if (title.length > 70) add('WARN', where, `title is ${title.length} chars (keep <= 70)`);
   const desc = meta(html, 'description');
   if (!desc) add('FAIL', where, 'missing meta description');
   else if (desc.length < 50 || desc.length > 170) add('WARN', where, `meta description is ${desc.length} chars (aim 50-160)`);
-  if (!/<link[^>]+rel=["']canonical["']/i.test(html)) add('WARN', where, 'no canonical link');
+  const links = tags(html, 'link');
+  if (!links.some((t) => rels(t).includes('canonical'))) add('WARN', where, 'no canonical link');
   for (const k of ['og:title', 'og:description', 'og:image', 'twitter:card']) if (!meta(html, k)) add('WARN', where, `missing ${k}`);
-  if (!/<meta[^>]+name=["']viewport["']/i.test(html)) add('FAIL', where, 'missing viewport meta');
-  if (!/rel=["'](icon|shortcut icon)["']/i.test(html)) add('WARN', where, 'no favicon link');
+  if (!tags(html, 'meta').some((t) => attr(t, 'name')?.toLowerCase() === 'viewport')) add('FAIL', where, 'missing viewport meta');
+  if (!links.some((t) => rels(t).includes('icon'))) add('WARN', where, 'no favicon link');
 
   const h1s = html.match(/<h1[\s>]/gi) || [];
   if (h1s.length !== 1) add('FAIL', where, `${h1s.length} <h1> elements (want exactly 1)`);
@@ -99,17 +113,18 @@ for (const [u, html] of pages) {
   for (let i = 1; i < levels.length; i++) if (levels[i] > levels[i - 1] + 1) { add('WARN', where, `heading level skips h${levels[i - 1]} -> h${levels[i]}`); break; }
   if (!/<main[\s>]/i.test(html)) add('FAIL', where, 'no <main> landmark');
 
-  for (const tag of html.match(/<img\b[^>]*>/gi) || []) {
+  for (const tag of tags(html, 'img')) {
     const src = attr(tag, 'src') || '';
     if (attr(tag, 'alt') === null) add('FAIL', where, `img without alt: ${src.slice(0, 60)}`);
     if (!attr(tag, 'width') && !/\bfill\b|position:\s*absolute/.test(tag)) add('WARN', where, `img without width/height (layout shift): ${src.slice(0, 60)}`);
   }
-  for (const m of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
-    if (!strip(m[2]).trim() && !/aria-label=/.test(m[1]) && !/alt=["'][^"']+["']/.test(m[2])) add('FAIL', where, `link with no accessible name: ${attr(`<a ${m[1]}>`, 'href')}`);
-    if (/target=["']_blank["']/.test(m[1]) && !/rel=["'][^"']*noopener/.test(m[1])) add('WARN', where, 'target=_blank without rel=noopener');
+  for (const m of html.matchAll(new RegExp(`<a\\b(${TAG_BODY})>([\\s\\S]*?)</a>`, 'gi'))) {
+    const a = `<a ${m[1]}>`;
+    if (!strip(m[2]).trim() && attr(a, 'aria-label') === null && !tags(m[2], 'img').some((t) => attr(t, 'alt')?.trim())) add('FAIL', where, `link with no accessible name: ${attr(a, 'href')}`);
+    if (attr(a, 'target')?.toLowerCase() === '_blank' && !rels(a).includes('noopener')) add('WARN', where, 'target=_blank without rel=noopener');
   }
-  for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
-    if (!strip(m[2]).trim() && !/aria-label=/.test(m[1])) add('FAIL', where, 'button with no accessible name');
+  for (const m of html.matchAll(new RegExp(`<button\\b(${TAG_BODY})>([\\s\\S]*?)</button>`, 'gi'))) {
+    if (!strip(m[2]).trim() && attr(`<button ${m[1]}>`, 'aria-label') === null) add('FAIL', where, 'button with no accessible name');
   }
   if (/<div[^>]+onclick=/i.test(html)) add('FAIL', where, 'clickable <div> (use <button> or <a>)');
 
@@ -178,11 +193,12 @@ const pick = (tag) => {
 let worst = null;
 for (const [u, html] of pages) {
   const where = new URL(u).pathname;
-  const res = (sel) => [...html.matchAll(sel)].map((m) => m[1]).filter(Boolean).map((x) => new URL(x.replace(/&amp;/g, '&'), u).href);
-  const js = res(/<script\b[^>]*\ssrc=["']([^"']+)["']/gi);
-  const css = res(/<link\b[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi).concat(res(/<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["']stylesheet["']/gi));
-  const preFonts = res(/<link\b[^>]*href=["']([^"']+\.(?:woff2?|ttf|otf))["'][^>]*>/gi);
-  const imgs = [...html.matchAll(/<img\b[^>]*>/gi)].map((m) => pick(m[0])).filter(Boolean).map((x) => new URL(x.replace(/&amp;/g, '&'), u).href);
+  const res = (list) => list.filter(Boolean).map((x) => new URL(x.replace(/&amp;/g, '&'), u).href);
+  const links = tags(html, 'link');
+  const js = res(tags(html, 'script').map((t) => attr(t, 'src')));
+  const css = res(links.filter((t) => rels(t).includes('stylesheet')).map((t) => attr(t, 'href')));
+  const preFonts = res(links.map((t) => attr(t, 'href')).filter((h) => /\.(?:woff2?|ttf|otf)$/i.test(h || '')));
+  const imgs = res(tags(html, 'img').map(pick));
   const tally = { html: (await size(u)).bytes, js: 0, css: 0, fonts: 0, img: 0 };
   for (const x of new Set(js)) tally.js += (await size(x)).bytes;
   const fonts = new Set(preFonts);
