@@ -8,9 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const audit = path.join(here, '..', '..', 'jury', 'scripts', 'audit.mjs');
-let out;
-try { out = execFileSync(process.execPath, [audit, path.join(here, 'site')], { encoding: 'utf8' }); }
-catch (e) { out = e.stdout || ''; } // audit exits 1 on FAIL, which the bare page is meant to cause
+const run = (...extra) => {
+  try { return { out: execFileSync(process.execPath, [audit, path.join(here, 'site'), ...extra], { encoding: 'utf8', stdio: 'pipe' }), status: 0 }; }
+  catch (e) { return { out: e.stdout || '', status: e.status, stderr: e.stderr || '' }; }
+};
+const { out, status, stderr } = run();
 
 const HEAD = ['<html> has no lang', 'missing meta description', 'missing viewport meta', 'no canonical link',
   'missing og:title', 'missing og:description', 'missing og:image', 'missing twitter:card', 'no favicon link'];
@@ -23,6 +25,10 @@ for (const where of ['/', '/quoted/']) {
 for (const msg of HEAD) if (!has('/bare/', msg)) errors.push(`missing on /bare/: ${msg}`);
 if (!/^3 pages crawled/m.test(out)) errors.push('expected 3 pages crawled (unquoted hrefs must be followed)');
 if (has('site', 'og:image')) errors.push('og:image reported as not loading');
+// Exit code: 1 with the bare page's FAILs, 0 on the first two pages alone (crawl order: /, /quoted/).
+if (status !== 1) errors.push(`expected exit 1 with FAILs, got ${status} ${stderr.trim()}`);
+const clean = run('--max', '2');
+if (clean.status !== 0) errors.push(`expected exit 0 without FAILs, got ${clean.status} ${clean.stderr?.trim() || ''}\n${clean.out}`);
 
 if (errors.length) { console.log(out); for (const e of errors) console.error(`FAIL ${e}`); process.exit(1); }
 console.log(`ok audit reads quoted, unquoted and bare attributes (${findings.length} findings as expected)`);

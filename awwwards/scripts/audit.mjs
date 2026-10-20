@@ -89,7 +89,7 @@ while (queue.length && pages.size < maxPages) {
     queue.push(next.href);
   }
 }
-if (!pages.size) { console.error(`Could not load ${base}`); server?.close(); process.exit(1); }
+if (!pages.size) { console.error(`Could not load ${base}`); add('FAIL', 'site', `start page ${base} did not load as HTML`); }
 
 for (const [u, html] of pages) {
   const where = new URL(u).pathname;
@@ -152,24 +152,26 @@ for (const [u, html] of pages) {
   if (words < 60) add('WARN', where, `only ${words} words of visible text (thin content)`);
 }
 
-// Site level
-const missing = await get(new URL(`/__audit-missing-${Date.now()}`, origin).href);
-if (missing.status !== 404) add('FAIL', 'site', `a missing URL returned HTTP ${missing.status}, not 404`);
-else if (!/<h1[\s>]/i.test(missing.body.toString('utf8'))) add('WARN', 'site', '404 page has no <h1> (design it: a way back, in the site voice)');
-const robots = await get(new URL('/robots.txt', origin).href);
-if (robots.status !== 200) add('WARN', 'site', 'no robots.txt');
-else if (/example\.com/.test(robots.body.toString())) add('WARN', 'site', 'robots.txt still points at example.com');
-const maps = [...robots.body.toString().matchAll(/^sitemap:\s*(\S+)/gim)].map((m) => onSite(m[1]));
-let sitemapOk = false;
-for (const u of [...maps, new URL('/sitemap.xml', origin).href, new URL('/sitemap-index.xml', origin).href]) if ((await get(u)).status === 200) { sitemapOk = true; break; }
-if (!sitemapOk) add('WARN', 'site', 'no sitemap');
-const ogs = new Set([...pages.values()].map((h) => meta(h, 'og:image')).filter(Boolean));
-// As written (a live site, or a CDN), else mapped onto this server (a local build whose tags
-// already point at the production domain).
-const isImage = (r) => r.status === 200 && r.type.startsWith('image/');
-for (const og of ogs) {
-  const abs = new URL(og, origin).href;
-  if (!isImage(await get(abs)) && !isImage(await get(onSite(abs)))) add('FAIL', 'site', `og:image ${abs} does not load (create a 1200x630 image)`);
+// Site level (skipped when the start page did not load: every check would fail with it)
+if (pages.size) {
+  const missing = await get(new URL(`/__audit-missing-${Date.now()}`, origin).href);
+  if (missing.status !== 404) add('FAIL', 'site', `a missing URL returned HTTP ${missing.status}, not 404`);
+  else if (!/<h1[\s>]/i.test(missing.body.toString('utf8'))) add('WARN', 'site', '404 page has no <h1> (design it: a way back, in the site voice)');
+  const robots = await get(new URL('/robots.txt', origin).href);
+  if (robots.status !== 200) add('WARN', 'site', 'no robots.txt');
+  else if (/example\.com/.test(robots.body.toString())) add('WARN', 'site', 'robots.txt still points at example.com');
+  const maps = [...robots.body.toString().matchAll(/^sitemap:\s*(\S+)/gim)].map((m) => onSite(m[1]));
+  let sitemapOk = false;
+  for (const u of [...maps, new URL('/sitemap.xml', origin).href, new URL('/sitemap-index.xml', origin).href]) if ((await get(u)).status === 200) { sitemapOk = true; break; }
+  if (!sitemapOk) add('WARN', 'site', 'no sitemap');
+  const ogs = new Set([...pages.values()].map((h) => meta(h, 'og:image')).filter(Boolean));
+  // As written (a live site, or a CDN), else mapped onto this server (a local build whose tags
+  // already point at the production domain).
+  const isImage = (r) => r.status === 200 && r.type.startsWith('image/');
+  for (const og of ogs) {
+    const abs = new URL(og, origin).href;
+    if (!isImage(await get(abs)) && !isImage(await get(onSite(abs)))) add('FAIL', 'site', `og:image ${abs} does not load (create a 1200x630 image)`);
+  }
 }
 
 // Weight: what each page actually downloads (gzip size for text assets).
@@ -227,7 +229,6 @@ for (const [u, html] of pages) {
   if (!worst || total > worst.total) worst = { where, total, ...tally };
 }
 
-server?.close();
 const order = { FAIL: 0, WARN: 1 };
 results.sort((a, b) => order[a.level] - order[b.level]);
 for (const r of results) console.log(`${r.level.padEnd(4)}  ${r.where.padEnd(28)}  ${r.msg}`);
@@ -235,4 +236,8 @@ const fails = results.filter((r) => r.level === 'FAIL').length;
 console.log(`\n${pages.size} pages crawled from ${base}`);
 if (worst) console.log(`heaviest page ${worst.where}: ~${kb(worst.total)} KB | html ${kb(worst.html)} | JS ${kb(worst.js)} (gz) | CSS ${kb(worst.css)} (gz) | fonts ${kb(worst.fonts)} | images ${kb(worst.img)}`);
 console.log(`${fails} FAIL, ${results.length - fails} WARN`);
-process.exit(fails ? 1 : 0);
+// Let Node exit on its own: process.exit() right after fetch() aborts Node on Windows (libuv
+// UV_HANDLE_CLOSING assertion, exit code 127) instead of returning this code.
+server?.closeAllConnections();
+server?.close();
+process.exitCode = fails ? 1 : 0;
