@@ -33,9 +33,20 @@ const strip = (html) => html
   .replace(/&amp;/g, '&')
   .replace(/&#x27;|&#39;|&rsquo;/g, "'")
   .replace(/\s+/g, ' ');
-const attr = (tag, name) => (tag.match(new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i')) || [])[2] ?? null;
+// Attributes as HTML parses them: double-quoted, single-quoted, unquoted (minifiers drop quotes:
+// <html lang=en>) or bare (<img alt>, an empty value).
+const ATTR = /\s([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+const attrs = (tag) => {
+  const out = {};
+  for (const m of tag.replace(/^<[^\s>]+/, '').matchAll(ATTR)) out[m[1].toLowerCase()] ??= m[2] ?? m[3] ?? m[4] ?? '';
+  return out;
+};
+const attr = (tag, name) => attrs(tag)[name] ?? null;
+const TAG_BODY = `(?:"[^"]*"|'[^']*'|[^'">])*`; // a '>' inside a quoted value does not end the tag
+const tags = (html, name) => html.match(new RegExp(`<${name}\\b${TAG_BODY}>`, 'gi')) || [];
+const rels = (tag) => (attr(tag, 'rel') || '').toLowerCase().split(/\s+/);
 const meta = (html, key) => {
-  const tag = (html.match(new RegExp(`<meta[^>]+(?:name|property)=["']${key}["'][^>]*>`, 'i')) || [])[0];
+  const tag = tags(html, 'meta').find((t) => [attr(t, 'name'), attr(t, 'property')].some((v) => v?.toLowerCase() === key));
   return tag ? attr(tag, 'content') : null;
 };
 const onSite = (u) => { const x = new URL(u); return new URL(x.pathname + x.search, origin).href; }; // production URLs → local server
@@ -67,32 +78,35 @@ while (queue.length && pages.size < maxPages) {
   if (!r.type.includes('html')) continue;
   const html = r.body.toString('utf8');
   pages.set(u, html);
-  for (const m of html.matchAll(/<a\b[^>]*\shref=["']([^"'#]+)[^"']*["']/gi)) {
+  for (const a of tags(html, 'a')) {
+    const href = attr(a, 'href');
+    if (!href || href.startsWith('#')) continue;
     let next;
-    try { next = new URL(m[1].replace(/&amp;/g, '&'), u); } catch { continue; }
+    try { next = new URL(href.replace(/&amp;/g, '&'), u); } catch { continue; }
     next.hash = ''; next.search = '';
     if (next.origin !== origin || seen.has(next.href) || /\.(?!html?$)[a-z0-9]{2,5}$/i.test(next.pathname)) continue;
     seen.add(next.href);
     queue.push(next.href);
   }
 }
-if (!pages.size) { console.error(`Could not load ${base}`); server?.close(); process.exit(1); }
+if (!pages.size) { console.error(`Could not load ${base}`); add('FAIL', 'site', `start page ${base} did not load as HTML`); }
 
 for (const [u, html] of pages) {
   const where = new URL(u).pathname;
   const head = html.match(/<head[\s\S]*?<\/head>/i)?.[0] || '';
   const text = strip(html.replace(/<head[\s\S]*?<\/head>/i, ''));
-  if (!/<html[^>]*\slang=["'][^"']+["']/i.test(html)) add('FAIL', where, '<html> has no lang');
+  if (!attr(tags(html, 'html')[0] || '', 'lang')?.trim()) add('FAIL', where, '<html> has no lang');
   const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]?.trim();
   if (!title) add('FAIL', where, 'missing <title>');
   else if (title.length > 70) add('WARN', where, `title is ${title.length} chars (keep <= 70)`);
   const desc = meta(html, 'description');
   if (!desc) add('FAIL', where, 'missing meta description');
   else if (desc.length < 50 || desc.length > 170) add('WARN', where, `meta description is ${desc.length} chars (aim 50-160)`);
-  if (!/<link[^>]+rel=["']canonical["']/i.test(html)) add('WARN', where, 'no canonical link');
+  const links = tags(html, 'link');
+  if (!links.some((t) => rels(t).includes('canonical'))) add('WARN', where, 'no canonical link');
   for (const k of ['og:title', 'og:description', 'og:image', 'twitter:card']) if (!meta(html, k)) add('WARN', where, `missing ${k}`);
-  if (!/<meta[^>]+name=["']viewport["']/i.test(html)) add('FAIL', where, 'missing viewport meta');
-  if (!/rel=["'](icon|shortcut icon)["']/i.test(html)) add('WARN', where, 'no favicon link');
+  if (!tags(html, 'meta').some((t) => attr(t, 'name')?.toLowerCase() === 'viewport')) add('FAIL', where, 'missing viewport meta');
+  if (!links.some((t) => rels(t).includes('icon'))) add('WARN', where, 'no favicon link');
 
   const h1s = html.match(/<h1[\s>]/gi) || [];
   if (h1s.length !== 1) add('FAIL', where, `${h1s.length} <h1> elements (want exactly 1)`);
@@ -100,17 +114,18 @@ for (const [u, html] of pages) {
   for (let i = 1; i < levels.length; i++) if (levels[i] > levels[i - 1] + 1) { add('WARN', where, `heading level skips h${levels[i - 1]} -> h${levels[i]}`); break; }
   if (!/<main[\s>]/i.test(html)) add('FAIL', where, 'no <main> landmark');
 
-  for (const tag of html.match(/<img\b[^>]*>/gi) || []) {
+  for (const tag of tags(html, 'img')) {
     const src = attr(tag, 'src') || '';
     if (attr(tag, 'alt') === null) add('FAIL', where, `img without alt: ${src.slice(0, 60)}`);
     if (!attr(tag, 'width') && !/\bfill\b|position:\s*absolute/.test(tag)) add('WARN', where, `img without width/height (layout shift): ${src.slice(0, 60)}`);
   }
-  for (const m of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
-    if (!strip(m[2]).trim() && !/aria-label=/.test(m[1]) && !/alt=["'][^"']+["']/.test(m[2])) add('FAIL', where, `link with no accessible name: ${attr(`<a ${m[1]}>`, 'href')}`);
-    if (/target=["']_blank["']/.test(m[1]) && !/rel=["'][^"']*noopener/.test(m[1])) add('WARN', where, 'target=_blank without rel=noopener');
+  for (const m of html.matchAll(new RegExp(`<a\\b(${TAG_BODY})>([\\s\\S]*?)</a>`, 'gi'))) {
+    const a = `<a ${m[1]}>`;
+    if (!strip(m[2]).trim() && attr(a, 'aria-label') === null && !tags(m[2], 'img').some((t) => attr(t, 'alt')?.trim())) add('FAIL', where, `link with no accessible name: ${attr(a, 'href')}`);
+    if (attr(a, 'target')?.toLowerCase() === '_blank' && !rels(a).includes('noopener')) add('WARN', where, 'target=_blank without rel=noopener');
   }
-  for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
-    if (!strip(m[2]).trim() && !/aria-label=/.test(m[1])) add('FAIL', where, 'button with no accessible name');
+  for (const m of html.matchAll(new RegExp(`<button\\b(${TAG_BODY})>([\\s\\S]*?)</button>`, 'gi'))) {
+    if (!strip(m[2]).trim() && attr(`<button ${m[1]}>`, 'aria-label') === null) add('FAIL', where, 'button with no accessible name');
   }
   if (/<div[^>]+onclick=/i.test(html)) add('FAIL', where, 'clickable <div> (use <button> or <a>)');
 
@@ -137,24 +152,26 @@ for (const [u, html] of pages) {
   if (words < 60) add('WARN', where, `only ${words} words of visible text (thin content)`);
 }
 
-// Site level
-const missing = await get(new URL(`/__audit-missing-${Date.now()}`, origin).href);
-if (missing.status !== 404) add('FAIL', 'site', `a missing URL returned HTTP ${missing.status}, not 404`);
-else if (!/<h1[\s>]/i.test(missing.body.toString('utf8'))) add('WARN', 'site', '404 page has no <h1> (design it: a way back, in the site voice)');
-const robots = await get(new URL('/robots.txt', origin).href);
-if (robots.status !== 200) add('WARN', 'site', 'no robots.txt');
-else if (/example\.com/.test(robots.body.toString())) add('WARN', 'site', 'robots.txt still points at example.com');
-const maps = [...robots.body.toString().matchAll(/^sitemap:\s*(\S+)/gim)].map((m) => onSite(m[1]));
-let sitemapOk = false;
-for (const u of [...maps, new URL('/sitemap.xml', origin).href, new URL('/sitemap-index.xml', origin).href]) if ((await get(u)).status === 200) { sitemapOk = true; break; }
-if (!sitemapOk) add('WARN', 'site', 'no sitemap');
-const ogs = new Set([...pages.values()].map((h) => meta(h, 'og:image')).filter(Boolean));
-// As written (a live site, or a CDN), else mapped onto this server (a local build whose tags
-// already point at the production domain).
-const isImage = (r) => r.status === 200 && r.type.startsWith('image/');
-for (const og of ogs) {
-  const abs = new URL(og, origin).href;
-  if (!isImage(await get(abs)) && !isImage(await get(onSite(abs)))) add('FAIL', 'site', `og:image ${abs} does not load (create a 1200x630 image)`);
+// Site level (skipped when the start page did not load: every check would fail with it)
+if (pages.size) {
+  const missing = await get(new URL(`/__audit-missing-${Date.now()}`, origin).href);
+  if (missing.status !== 404) add('FAIL', 'site', `a missing URL returned HTTP ${missing.status}, not 404`);
+  else if (!/<h1[\s>]/i.test(missing.body.toString('utf8'))) add('WARN', 'site', '404 page has no <h1> (design it: a way back, in the site voice)');
+  const robots = await get(new URL('/robots.txt', origin).href);
+  if (robots.status !== 200) add('WARN', 'site', 'no robots.txt');
+  else if (/example\.com/.test(robots.body.toString())) add('WARN', 'site', 'robots.txt still points at example.com');
+  const maps = [...robots.body.toString().matchAll(/^sitemap:\s*(\S+)/gim)].map((m) => onSite(m[1]));
+  let sitemapOk = false;
+  for (const u of [...maps, new URL('/sitemap.xml', origin).href, new URL('/sitemap-index.xml', origin).href]) if ((await get(u)).status === 200) { sitemapOk = true; break; }
+  if (!sitemapOk) add('WARN', 'site', 'no sitemap');
+  const ogs = new Set([...pages.values()].map((h) => meta(h, 'og:image')).filter(Boolean));
+  // As written (a live site, or a CDN), else mapped onto this server (a local build whose tags
+  // already point at the production domain).
+  const isImage = (r) => r.status === 200 && r.type.startsWith('image/');
+  for (const og of ogs) {
+    const abs = new URL(og, origin).href;
+    if (!isImage(await get(abs)) && !isImage(await get(onSite(abs)))) add('FAIL', 'site', `og:image ${abs} does not load (create a 1200x630 image)`);
+  }
 }
 
 // Weight: what each page actually downloads (gzip size for text assets).
@@ -179,11 +196,12 @@ const pick = (tag) => {
 let worst = null;
 for (const [u, html] of pages) {
   const where = new URL(u).pathname;
-  const res = (sel) => [...html.matchAll(sel)].map((m) => m[1]).filter(Boolean).map((x) => new URL(x.replace(/&amp;/g, '&'), u).href);
-  const js = res(/<script\b[^>]*\ssrc=["']([^"']+)["']/gi);
-  const css = res(/<link\b[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi).concat(res(/<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["']stylesheet["']/gi));
-  const preFonts = res(/<link\b[^>]*href=["']([^"']+\.(?:woff2?|ttf|otf))["'][^>]*>/gi);
-  const imgs = [...html.matchAll(/<img\b[^>]*>/gi)].map((m) => pick(m[0])).filter(Boolean).map((x) => new URL(x.replace(/&amp;/g, '&'), u).href);
+  const res = (list) => list.filter(Boolean).map((x) => new URL(x.replace(/&amp;/g, '&'), u).href);
+  const links = tags(html, 'link');
+  const js = res(tags(html, 'script').map((t) => attr(t, 'src')));
+  const css = res(links.filter((t) => rels(t).includes('stylesheet')).map((t) => attr(t, 'href')));
+  const preFonts = res(links.map((t) => attr(t, 'href')).filter((h) => /\.(?:woff2?|ttf|otf)$/i.test(h || '')));
+  const imgs = res(tags(html, 'img').map(pick));
   const tally = { html: (await size(u)).bytes, js: 0, css: 0, fonts: 0, img: 0 };
   for (const x of new Set(js)) tally.js += (await size(x)).bytes;
   const fonts = new Set(preFonts);
@@ -211,7 +229,6 @@ for (const [u, html] of pages) {
   if (!worst || total > worst.total) worst = { where, total, ...tally };
 }
 
-server?.close();
 const order = { FAIL: 0, WARN: 1 };
 results.sort((a, b) => order[a.level] - order[b.level]);
 for (const r of results) console.log(`${r.level.padEnd(4)}  ${r.where.padEnd(28)}  ${r.msg}`);
@@ -219,4 +236,8 @@ const fails = results.filter((r) => r.level === 'FAIL').length;
 console.log(`\n${pages.size} pages crawled from ${base}`);
 if (worst) console.log(`heaviest page ${worst.where}: ~${kb(worst.total)} KB | html ${kb(worst.html)} | JS ${kb(worst.js)} (gz) | CSS ${kb(worst.css)} (gz) | fonts ${kb(worst.fonts)} | images ${kb(worst.img)}`);
 console.log(`${fails} FAIL, ${results.length - fails} WARN`);
-process.exit(fails ? 1 : 0);
+// Let Node exit on its own: process.exit() right after fetch() aborts Node on Windows (libuv
+// UV_HANDLE_CLOSING assertion, exit code 127) instead of returning this code.
+server?.closeAllConnections();
+server?.close();
+process.exitCode = fails ? 1 : 0;

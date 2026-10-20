@@ -10,12 +10,13 @@
 !/README.md
 !/LICENSE
 
-# Tests: only the generator and the two fixture apps the references are built from.
+# Tests: only the generator, the two fixture apps the references are built from, and the audit fixture.
 # Sites built with the skill (mara, julio, kestrel, ...) stay local.
 !/tests/
 /tests/*
 !/tests/README.md
 !/tests/smoke.mjs
+!/tests/audit/
 !/tests/_gen/
 !/tests/nexttest/
 !/tests/astrotest/

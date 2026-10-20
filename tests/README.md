@@ -12,6 +12,9 @@ copied out of two small apps that build and run:
 - `smoke.mjs`: loads a running fixture in Chromium and checks the loader finishes, the GL canvas
   mounts, a page transition into a project and the back button work, and a missing URL returns
   404, with no console or page errors.
+- `audit/`: a tiny static site and `check.mjs`, which runs `jury/scripts/audit.mjs` on it. The
+  pages carry the same metadata minified (unquoted attributes), quoted, and missing, so the audit
+  must pass the first two and still flag the third: `node tests/audit/check.mjs`.
 
 To change engine or stack code, edit the fixture, check it still builds, then regenerate:
 

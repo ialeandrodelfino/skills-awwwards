@@ -10,6 +10,7 @@
 // The hover pass adds about 3 s per target; --hovers 0 skips the targets (idle check still runs).
 // --crawl shoots one page of every type plus the 404 into <out>/<page>/ and writes summary.json.
 // Read every PNG it writes.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -28,10 +29,19 @@ const nav = args.includes('--nav');
 const crawl = args.includes('--crawl');
 const throttle = !args.includes('--no-throttle');
 
-// axe-core from the project, else from the CDN; without it the a11y pass is skipped.
+// axe-core from the project, else a pinned CDN copy checked against its hash (the same file as in
+// the npm tarball), so runs are reproducible and a changed file is never run; without either the
+// a11y pass is skipped. To bump: new version, and the sha384 of its axe.min.js.
+const AXE_CDN = { url: 'https://cdn.jsdelivr.net/npm/axe-core@4.14.0/axe.min.js', sha384: 'lFUXB8tI4BaTE1bqxH9eeAXON2NH1qsdAhs7S5L++nUNP5QOy+hwr0C3TYEJUEl0' };
 async function loadAxe() {
   try { return fs.readFileSync(createRequire(path.join(process.cwd(), 'noop.js')).resolve('axe-core/axe.min.js'), 'utf8'); } catch {}
-  try { const r = await fetch('https://cdn.jsdelivr.net/npm/axe-core@4/axe.min.js'); if (r.ok) return await r.text(); } catch {}
+  try {
+    const r = await fetch(AXE_CDN.url);
+    if (!r.ok) return null;
+    const body = Buffer.from(await r.arrayBuffer());
+    if (crypto.createHash('sha384').update(body).digest('base64') === AXE_CDN.sha384) return body.toString('utf8');
+    console.error(`axe-core from ${AXE_CDN.url} does not match its pinned hash; skipping the a11y pass`);
+  } catch {}
   return null;
 }
 
