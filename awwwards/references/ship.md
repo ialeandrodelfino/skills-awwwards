@@ -23,6 +23,12 @@ Deploying publishes the site: confirm with the user before running any of these.
 | Cloudflare | OpenNext adapter (`@opennextjs/cloudflare`), or static export | `npx wrangler pages deploy dist` |
 | GitHub Pages | static export only (`output: 'export'`, deploy `out/`) | official `withastro/action` (set `site`/`base`) |
 
+Any static host can serve Astro's `dist/` or a Next static export's `out/`; the table is not a
+whitelist. If no host account or CLI login is available (a sandbox, a fresh machine), don't let
+the hand-off stall on "log in to X": ask the owner which host they want, or offer a static host
+they already use, and set `site.url` to the final URL before the last build. For a quick look on
+a phone in the meantime, serve the build on the local network (`npx serve dist -l 4400`, or `out`).
+
 A custom domain from the name (`<name>.studio`, `<name>.design`) reads best for personal sites.
 
 ## Hand-off
